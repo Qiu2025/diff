@@ -91,9 +91,9 @@ npx pdf-diff --interactive
 You can easily deploy your own private instance using Docker Compose: 
 ```
 services:
-  pdf-diff:
+  diff:
     image: qiu321/diff:latest
-    container_name: pdf-diff
+    container_name: diff
     restart: unless-stopped
     ports:
       - "8085:80"
@@ -101,7 +101,7 @@ services:
 or by running the following line:
 ```
 docker run -d \
-  --name pdf-diff \
+  --name diff \
   -p 8085:80 \
   --restart unless-stopped \
   qiu321/diff:latest
