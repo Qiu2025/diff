@@ -1,5 +1,5 @@
 {
-  "name": "@jamesmontemagno/pdf-diff",
+  "name": "pdf-diff",
   "version": "1.0.4",
   "description": "Compare PDF documents privately and securely in your browser. No uploads, no servers, just local processing.",
   "keywords": [
@@ -14,12 +14,12 @@
     "cli",
     "npx"
   ],
-  "homepage": "https://www.pdf-diff.com",
+  "homepage": "https://diff.sqiu.dev",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jamesmontemagno/pdf-diff.git"
+    "url": "git+https://https://github.com/Qiu2025/pdf-diff.git"
   },
-  "author": "James Montemagno",
+  "author": "Qiu",
   "license": "MIT",
   "private": false,
   "type": "module",

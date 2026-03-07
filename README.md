@@ -1,14 +1,6 @@
 # PDF Diff
 
-> 🔒 Compare PDF documents privately and securely in your browser. No uploads, no servers, 100% client-side processing.
-
-[![Live Demo](https://img.shields.io/badge/demo-live-success)](https://www.pdf-diff.com)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/jamesmontemagno/pdf-diff)](https://github.com/jamesmontemagno/pdf-diff/stargazers)
-
-![PDF Diff Screenshot](https://github.com/user-attachments/assets/25448695-50dc-4b62-b6e0-3cb0d506774a)
-
-**[Try it now at www.pdf-diff.com →](https://www.pdf-diff.com)**
+ Compare PDF documents privately and securely in your browser. No uploads, no servers, 100% client-side processing.
 
 ## ✨ Features
 
@@ -41,9 +33,25 @@
 - **Real-time Processing** - Instant comparison results
 - **Clean Interface** - Intuitive and clutter-free design
 
-## 🚀 Getting Started
+## 🛠️ Tech Stack
 
-### Quick Start with CLI (npx)
+- **[React 19](https://react.dev/)** - Modern UI framework
+- **[TypeScript](https://www.typescriptlang.org/)** - Type-safe development
+- **[Vite](https://vite.dev/)** - Lightning-fast build tool
+- **[PDF.js](https://mozilla.github.io/pdf.js/)** - Mozilla's PDF rendering engine
+- **[jsPDF](https://github.com/parallax/jsPDF)** - PDF generation for exports
+- **[diff](https://github.com/kpdecker/jsdiff)** - Text comparison algorithm
+
+## 🚀 Getting Started (Using the Web App)
+
+1. Visit **[diff.sqiu.dev](https://diff.sqiu.dev)**
+2. Upload or drag your **original PDF**
+3. Upload or drag your **modified PDF**
+4. View comparison results instantly
+5. Switch between view modes as needed
+6. Export results to PDF if desired
+
+## 🚀 Getting Started (Using CLI)
 
 Compare PDFs directly from your terminal with zero installation:
 
@@ -77,16 +85,7 @@ npx pdf-diff --interactive
 | `-t, --threshold <float>` | Change percentage threshold for failure | - |
 | `-i, --interactive` | Interactive mode with guided prompts | - |
 
-### Using the Web App
-
-1. Visit **[www.pdf-diff.com](https://www.pdf-diff.com)**
-2. Upload or drag your **original PDF**
-3. Upload or drag your **modified PDF**
-4. View comparison results instantly
-5. Switch between view modes as needed
-6. Export results to PDF if desired
-
-### Development
+## 🚀 Development
 
 ```bash
 # Clone the repository
@@ -109,35 +108,6 @@ npm run preview
 npm run lint
 ```
 
-## 🛠️ Tech Stack
-
-- **[React 19](https://react.dev/)** - Modern UI framework
-- **[TypeScript](https://www.typescriptlang.org/)** - Type-safe development
-- **[Vite](https://vite.dev/)** - Lightning-fast build tool
-- **[PDF.js](https://mozilla.github.io/pdf.js/)** - Mozilla's PDF rendering engine
-- **[jsPDF](https://github.com/parallax/jsPDF)** - PDF generation for exports
-- **[diff](https://github.com/kpdecker/jsdiff)** - Text comparison algorithm
-
-## 🎨 Color Coding
-
-- 🟢 **Green** - Additions (new content)
-- 🔴 **Red** - Deletions (removed content)  
-- ⚪ **White/Gray** - Unchanged content
-
-## 🔒 Privacy & Security
-
-PDF Diff is built with privacy as the top priority:
-
-1. **No Server Communication** - Files are processed entirely in your browser
-2. **No Data Storage** - Nothing is saved or cached
-3. **No Tracking** - No analytics or user tracking (except standard web analytics)
-4. **No Third-Party APIs** - All processing happens locally
-5. **Open Source** - Full transparency, audit the code yourself
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
 ## 📄 License
 
 MIT License - See [LICENSE](LICENSE) for details.
@@ -148,11 +118,3 @@ MIT License - See [LICENSE](LICENSE) for details.
 - Website: [montemagno.com](https://montemagno.com)
 - GitHub: [@jamesmontemagno](https://github.com/jamesmontemagno)
 - Twitter: [@JamesMontemagno](https://twitter.com/JamesMontemagno)
-
-## 🌟 Show Your Support
-
-Give a ⭐️ if this project helped you!
-
----
-
-**[Start comparing PDFs now →](https://www.pdf-diff.com)**
