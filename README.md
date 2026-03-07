@@ -42,7 +42,7 @@
 - **[jsPDF](https://github.com/parallax/jsPDF)** - PDF generation for exports
 - **[diff](https://github.com/kpdecker/jsdiff)** - Text comparison algorithm
 
-## 🚀 Getting Started (Using the Web App)
+## 🌐 Usage (Web App)
 
 1. Visit **[diff.sqiu.dev](https://diff.sqiu.dev)**
 2. Upload or drag your **original PDF**
@@ -51,7 +51,7 @@
 5. Switch between view modes as needed
 6. Export results to PDF if desired
 
-## 🚀 Getting Started (Using CLI)
+## 💻 Usage (CLI)
 
 Compare PDFs directly from your terminal with zero installation:
 
@@ -85,6 +85,26 @@ npx pdf-diff --interactive
 | `-t, --threshold <float>` | Change percentage threshold for failure | - |
 | `-i, --interactive` | Interactive mode with guided prompts | - |
 
+## 🐳 Self Hosting (Docker)
+You can easily deploy your own private instance using Docker Compose: 
+```
+services:
+  pdf-diff:
+    image: qiu321/pdf-diff:latest
+    container_name: pdf-diff
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+```
+or by running the following line:
+```
+docker run -d \
+  --name pdf-diff \
+  -p 8085:80 \
+  --restart unless-stopped \
+  qiu321/pdf-diff:latest
+```
+
 ## 🚀 Development
 
 ```bash
@@ -107,14 +127,3 @@ npm run preview
 # Run linter
 npm run lint
 ```
-
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE) for details.
-
-## 👨‍💻 Author
-
-**James Montemagno**
-- Website: [montemagno.com](https://montemagno.com)
-- GitHub: [@jamesmontemagno](https://github.com/jamesmontemagno)
-- Twitter: [@JamesMontemagno](https://twitter.com/JamesMontemagno)
