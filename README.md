@@ -1,6 +1,8 @@
-# PDF Diff
+# Diff
+Compare PDF documents privately and securely in your browser. No uploads, no servers, 100% client-side processing.
 
- Compare PDF documents privately and securely in your browser. No uploads, no servers, 100% client-side processing.
+> [!NOTE]
+> This project is a modified and rebranded version of the original [PDF Diff](https://github.com/jamesmontemagno/pdf-diff) by [James Montemagno](https://github.com/jamesmontemagno). I forked it to adapt the tool for my personal workflow. All credit for the original core logic goes to him.
 
 ## ✨ Features
 
@@ -90,7 +92,7 @@ You can easily deploy your own private instance using Docker Compose:
 ```
 services:
   pdf-diff:
-    image: qiu321/pdf-diff:latest
+    image: qiu321/diff:latest
     container_name: pdf-diff
     restart: unless-stopped
     ports:
@@ -102,14 +104,14 @@ docker run -d \
   --name pdf-diff \
   -p 8085:80 \
   --restart unless-stopped \
-  qiu321/pdf-diff:latest
+  qiu321/diff:latest
 ```
 
 ## 🚀 Development
 
 ```bash
 # Clone the repository
-git clone https://github.com/qiu2025/pdf-diff.git
+git clone https://github.com/qiu2025/diff.git
 cd pdf-diff
 
 # Install dependencies

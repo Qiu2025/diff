@@ -346,7 +346,7 @@ function App() {
           Made with ❤️ for privacy-conscious users
         </p>
         <div className="footer-links">
-          <a href="https://github.com/qiu2025/pdf-diff" target="_blank" rel="noopener noreferrer">
+          <a href="https://github.com/qiu2025/diff" target="_blank" rel="noopener noreferrer">
             GitHub
           </a>
           <span>·</span>
