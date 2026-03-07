@@ -109,7 +109,7 @@ docker run -d \
 
 ```bash
 # Clone the repository
-git clone https://github.com/jamesmontemagno/pdf-diff.git
+git clone https://github.com/qiu2025/pdf-diff.git
 cd pdf-diff
 
 # Install dependencies

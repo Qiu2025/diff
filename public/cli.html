@@ -4,76 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDF Diff CLI - Command Line PDF Comparison Tool</title>
-  <meta name="description" content="Compare PDF documents from the command line with pdf-diff CLI. Generate HTML and PDF reports, CI-friendly, zero install via npx.">
-  <meta name="keywords" content="pdf diff cli, pdf compare command line, pdf comparison tool, npx pdf-diff, ci pdf comparison, automated pdf comparison, github actions pdf diff">
-  <meta name="author" content="James Montemagno">
-  <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://www.pdf-diff.com/cli.html">
+  <meta name="robots" content="niindex, nifollow">
   <link rel="icon" type="image/svg+xml" href="/pdf-icon.svg">
   
-  <!-- Open Graph / Facebook -->
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://www.pdf-diff.com/cli.html">
-  <meta property="og:title" content="PDF Diff CLI - Command Line PDF Comparison Tool">
-  <meta property="og:description" content="Compare PDF documents from the command line. Generate visual HTML/PDF reports. CI-friendly with npx support.">
-  <meta property="og:image" content="https://www.pdf-diff.com/social-banner.png">
-  <meta property="og:image:alt" content="PDF Diff CLI - Command Line PDF Comparison Tool">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:site_name" content="PDF Diff">
-  <meta property="og:locale" content="en_US">
-  
-  <!-- Twitter -->
-  <meta property="twitter:card" content="summary_large_image">
-  <meta property="twitter:url" content="https://www.pdf-diff.com/cli.html">
-  <meta property="twitter:title" content="PDF Diff CLI - Command Line PDF Comparison Tool">
-  <meta property="twitter:description" content="Compare PDF documents from the command line. Generate visual HTML/PDF reports. CI-friendly with npx support.">
-  <meta property="twitter:image" content="https://www.pdf-diff.com/social-banner.png">
-  <meta property="twitter:image:alt" content="PDF Diff CLI - Command Line PDF Comparison Tool">
-  <meta property="twitter:creator" content="@JamesMontemagno">
-  
-  <!-- Additional SEO Tags -->
   <meta name="theme-color" content="#6366f1">
-  
-  <!-- Structured Data -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "PDF Diff CLI",
-    "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "Linux, macOS, Windows",
-    "url": "https://www.pdf-diff.com/cli.html",
-    "downloadUrl": "https://www.npmjs.com/package/@jamesmontemagno/pdf-diff",
-    "description": "Command-line tool for comparing PDF documents. Generate HTML and PDF reports, CI/CD integration, zero install with npx.",
-    "softwareVersion": "1.0",
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "USD"
-    },
-    "featureList": [
-      "Visual HTML and PDF reports",
-      "CI/CD pipeline integration",
-      "JSON and JUnit output formats",
-      "Page-specific comparison",
-      "Interactive mode",
-      "Exit codes for automation",
-      "npx support - zero install"
-    ],
-    "author": {
-      "@type": "Person",
-      "name": "James Montemagno",
-      "url": "https://github.com/jamesmontemagno"
-    },
-    "provider": {
-      "@type": "Organization",
-      "name": "PDF Diff",
-      "url": "https://www.pdf-diff.com"
-    },
-    "installUrl": "https://www.npmjs.com/package/@jamesmontemagno/pdf-diff"
-  }
-  </script>
   
   <style>
     :root {
@@ -418,7 +352,7 @@
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="container" style="margin-bottom: 0; padding-bottom: 0;">
     <a href="/" class="back-link">
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -428,17 +362,16 @@
     </a>
   </div>
   
-  <header>
+  <header style="margin-top: 1rem; padding-top: 0;">
     <a href="/" class="logo-link">
       <img src="/pdf-icon.svg" alt="PDF Diff">
       <h1>PDF Diff</h1>
     </a>
     <h2>Command Line Interface</h2>
     <p>Compare PDF documents from your terminal with zero install</p>
-    <span class="badge">npx ready</span>
   </header>
   
-  <main class="container">
+  <main class="container" style="margin-top: 0rem; padding-top: 0;">
     <!-- Quick Start -->
     <section>
       <div class="install-box">
@@ -447,7 +380,7 @@
           Quick Start
         </h3>
         <p>Run directly with npx - no installation required!</p>
-        <pre><code><span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> original.pdf modified.pdf</code></pre>
+        <pre><code><span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> original.pdf modified.pdf</code></pre>
         <p class="note">Requires Node.js 18 or later</p>
       </div>
     </section>
@@ -461,18 +394,18 @@
       
       <h4>Option 1: Use directly with npx (recommended)</h4>
       <pre><code><span class="code-comment"># No installation needed - runs the latest version</span>
-<span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> file1.pdf file2.pdf</code></pre>
+<span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> file1.pdf file2.pdf</code></pre>
       
       <h4>Option 2: Global installation</h4>
       <pre><code><span class="code-comment"># Install globally</span>
-<span class="code-command">npm</span> install -g <span class="code-string">@jamesmontemagno/pdf-diff</span>
+<span class="code-command">npm</span> install -g <span class="code-string">@sqiu123/diff</span>
 
 <span class="code-comment"># Then use anywhere</span>
 <span class="code-command">pdf-diff</span> file1.pdf file2.pdf</code></pre>
       
       <h4>Option 3: Project dependency</h4>
       <pre><code><span class="code-comment"># Add to your project</span>
-<span class="code-command">npm</span> install --save-dev <span class="code-string">@jamesmontemagno/pdf-diff</span>
+<span class="code-command">npm</span> install --save-dev <span class="code-string">@sqiu123/diff</span>
 
 <span class="code-comment"># Use in package.json scripts</span>
 <span class="code-string">"scripts"</span>: {
@@ -487,7 +420,7 @@
         Features
       </h3>
       
-      <div class="feature-grid">
+      <div class="feature-grid" style="display: grid; grid-template-columns: repeat(2, 1fr);">
         <div class="feature-card">
           <h4><span class="icon">📄</span> Visual Reports</h4>
           <p>Generate beautiful HTML and PDF reports showing all differences with syntax highlighting.</p>
@@ -516,31 +449,31 @@
       
       <h4>Basic comparison</h4>
       <pre><code><span class="code-comment"># Compare two PDFs and generate HTML + PDF reports</span>
-<span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> original.pdf modified.pdf</code></pre>
+<span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> original.pdf modified.pdf</code></pre>
       
       <h4>CI/CD pipeline</h4>
       <pre><code><span class="code-comment"># Exit with code 1 if differences found, output as JSON</span>
-<span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> old.pdf new.pdf <span class="code-flag">--fail-on-diff</span> <span class="code-flag">--format</span> json</code></pre>
+<span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> old.pdf new.pdf <span class="code-flag">--fail-on-diff</span> <span class="code-flag">--format</span> json</code></pre>
       
       <h4>Custom output directory</h4>
       <pre><code><span class="code-comment"># Save reports to a specific folder</span>
-<span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> a.pdf b.pdf <span class="code-flag">--out</span> ./my-reports</code></pre>
+<span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> a.pdf b.pdf <span class="code-flag">--out</span> ./my-reports</code></pre>
       
       <h4>Compare specific pages</h4>
       <pre><code><span class="code-comment"># Only compare pages 1-3 and page 5</span>
-<span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> a.pdf b.pdf <span class="code-flag">--pages</span> <span class="code-string">"1-3,5"</span></code></pre>
+<span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> a.pdf b.pdf <span class="code-flag">--pages</span> <span class="code-string">"1-3,5"</span></code></pre>
       
       <h4>HTML report only</h4>
       <pre><code><span class="code-comment"># Generate only HTML report (faster)</span>
-<span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> a.pdf b.pdf <span class="code-flag">--report</span> html</code></pre>
+<span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> a.pdf b.pdf <span class="code-flag">--report</span> html</code></pre>
       
       <h4>Interactive mode</h4>
       <pre><code><span class="code-comment"># Launch guided prompts</span>
-<span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> <span class="code-flag">--interactive</span></code></pre>
+<span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> <span class="code-flag">--interactive</span></code></pre>
       
       <h4>JUnit output for CI</h4>
       <pre><code><span class="code-comment"># Output in JUnit XML format for test reporters</span>
-<span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> a.pdf b.pdf <span class="code-flag">--format</span> junit</code></pre>
+<span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> a.pdf b.pdf <span class="code-flag">--format</span> junit</code></pre>
     </section>
     
     <!-- CLI Options -->
@@ -673,7 +606,7 @@ jobs:
       
       - name: Compare PDFs
         run: |
-          npx @jamesmontemagno/pdf-diff \
+          npx @sqiu123/diff \
             docs/expected.pdf \
             docs/generated.pdf \
             --fail-on-diff \
@@ -763,33 +696,21 @@ jobs:
       
       <h4>Skip PDF report generation</h4>
       <p>If you only need the HTML report and want to skip Chromium:</p>
-      <pre><code><span class="code-command">npx</span> <span class="code-string">@jamesmontemagno/pdf-diff</span> a.pdf b.pdf <span class="code-flag">--report</span> html</code></pre>
+      <pre><code><span class="code-command">npx</span> <span class="code-string">@sqiu123/diff</span> a.pdf b.pdf <span class="code-flag">--report</span> html</code></pre>
     </section>
     
-    <!-- Source -->
-    <section>
-      <h3>
-        <span class="icon">📂</span>
-        Source Code
-      </h3>
-      
-      <p>PDF Diff is open source! View the code, report issues, or contribute on GitHub:</p>
-      
-      <p>
-        <a href="https://github.com/jamesmontemagno/pdf-diff" target="_blank" rel="noopener noreferrer" style="color: var(--primary-color);">
-          github.com/jamesmontemagno/pdf-diff
-        </a>
-      </p>
-    </section>
   </main>
   
-  <footer>
-    <p>
+<footer>
+    <p style="margin-bottom: 0;">
       Made with ❤️ for privacy-conscious users
     </p>
-    <p style="margin-top: 0.5rem;">
-      <a href="/">Web App</a> · <a href="https://github.com/jamesmontemagno/pdf-diff" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="https://www.npmjs.com/package/@jamesmontemagno/pdf-diff" target="_blank" rel="noopener noreferrer">npm</a>
+    <p style="margin-top: 5px;">
+      <a href="/">Web App</a>
+      <span style="margin: 0 15px;">·</span>
+      <a href="https://github.com/qiu2025/pdf-diff" target="_blank" rel="noopener noreferrer">GitHub</a>
     </p>
   </footer>
+
 </body>
 </html>

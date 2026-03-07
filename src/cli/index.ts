@@ -290,7 +290,7 @@ Examples:
   $ npx pdf-diff original.pdf modified.pdf --fail-on-diff
   $ npx pdf-diff --interactive
 
-For more information, visit: https://www.pdf-diff.com
+For more information, visit: https://diff.sqiu.dev
 `);
 
   program.parse();
