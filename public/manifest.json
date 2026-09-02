@@ -4,8 +4,8 @@
   "description": "Compare PDF documents privately and securely in your browser. No uploads, no servers, just local processing.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f0f0f",
-  "theme_color": "#6366f1",
+  "background_color": "#efede6",
+  "theme_color": "#1d1e1b",
   "orientation": "portrait-primary",
   "icons": [
     {

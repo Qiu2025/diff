@@ -1,39 +1,43 @@
 .pdf-dropzone {
-  border: 2px dashed var(--border-color, #4b5563);
-  border-radius: 12px;
-  padding: 2rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: var(--dropzone-bg, rgba(255, 255, 255, 0.02));
-  min-height: 180px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.pdf-dropzone:hover:not(.disabled) {
-  border-color: var(--primary-color, #6366f1);
-  background: var(--dropzone-hover-bg, rgba(99, 102, 241, 0.1));
-}
-
-.pdf-dropzone.has-file {
-  border-color: var(--success-color, #22c55e);
-  border-style: solid;
-  background: var(--dropzone-success-bg, rgba(34, 197, 94, 0.1));
-}
-
-.pdf-dropzone.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  position: relative;
+  min-width: 0;
+  background: var(--dropzone-bg);
 }
 
 .pdf-dropzone input[type="file"] {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .pdf-dropzone label {
+  display: block;
+  min-height: 178px;
   cursor: pointer;
-  width: 100%;
+}
+
+.pdf-dropzone:hover:not(.disabled),
+.pdf-dropzone:focus-within {
+  background: var(--dropzone-hover-bg);
+}
+
+.pdf-dropzone:focus-within {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
+
+.pdf-dropzone.has-file {
+  background: var(--dropzone-success-bg);
+}
+
+.pdf-dropzone.disabled {
+  opacity: 0.55;
 }
 
 .pdf-dropzone.disabled label {
@@ -41,46 +45,98 @@
 }
 
 .dropzone-content {
-  display: flex;
-  flex-direction: column;
+  min-height: 178px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 1rem;
-  text-align: center;
+  gap: 1.25rem;
+  padding: 1.75rem;
 }
 
 .dropzone-icon {
-  color: var(--text-muted, #9ca3af);
-  transition: color 0.2s ease;
+  position: relative;
+  width: 42px;
+  height: 54px;
+  display: flex;
+  align-items: flex-end;
+  padding: 0.4rem;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
 }
 
-.pdf-dropzone:hover:not(.disabled) .dropzone-icon {
-  color: var(--primary-color, #6366f1);
+.dropzone-icon::before {
+  content: "";
+  position: absolute;
+  inset: 7px 7px auto;
+  height: 1px;
+  background: var(--border-color);
+  box-shadow: 0 6px 0 var(--border-color), 0 12px 0 var(--border-color);
 }
 
-.pdf-dropzone.has-file .dropzone-icon {
-  color: var(--success-color, #22c55e);
+.dropzone-icon span {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+}
+
+.has-file .dropzone-icon {
+  border-color: var(--success-color);
+  color: var(--success-color);
 }
 
 .dropzone-text {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.3rem;
 }
 
 .dropzone-label {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dropzone-prompt,
+.dropzone-filename {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.95rem;
   font-weight: 600;
-  font-size: 1.1rem;
-  color: var(--text-primary, #f3f4f6);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dropzone-filename {
-  font-size: 0.9rem;
-  color: var(--success-color, #22c55e);
-  word-break: break-all;
-  max-width: 200px;
+  color: var(--success-color);
 }
 
 .dropzone-hint {
-  font-size: 0.85rem;
-  color: var(--text-muted, #9ca3af);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.dropzone-action {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+
+.pdf-dropzone:hover:not(.disabled) .dropzone-action {
+  color: var(--primary-color);
+}
+
+@media (max-width: 560px) {
+  .dropzone-content {
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 148px;
+    padding: 1.5rem;
+  }
+
+  .dropzone-action {
+    display: none;
+  }
 }

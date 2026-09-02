@@ -1,146 +1,149 @@
 :root {
-  /* Colors */
-  --primary-color: #6366f1;
-  --primary-hover: #4f46e5;
-  --success-color: #22c55e;
-  --danger-color: #ef4444;
-  --warning-color: #f59e0b;
-  
-  /* Typography */
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.6;
-  font-weight: 400;
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 
+  --bg-primary: #efede6;
+  --bg-secondary: #e5e2d9;
+  --card-bg: #fbfaf6;
+  --surface-muted: #f4f2eb;
+  --border-color: #cbc7bb;
+  --border-strong: #8c887d;
+  --text-primary: #1d1e1b;
+  --text-secondary: #484a45;
+  --text-muted: #6d7068;
+  --primary-color: #2457d6;
+  --primary-hover: #173fa4;
+  --success-color: #176247;
+  --success-bg: #dfece5;
+  --danger-color: #9d352a;
+  --danger-bg: #f2dfdb;
+  --warning-color: #8a5a10;
+  --hover-bg: #e9e6dd;
+  --dropzone-bg: #fbfaf6;
+  --dropzone-hover-bg: #f3f1e9;
+  --dropzone-success-bg: #f2f7f3;
+
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font-family: var(--font-sans);
   font-synthesis: none;
+  font-weight: 400;
+  line-height: 1.5;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Dark theme (default) */
-:root,
-:root[data-theme="dark"] {
-  --bg-primary: #0f0f0f;
-  --bg-secondary: #1a1a1a;
-  --card-bg: #1e1e1e;
-  --border-color: #374151;
-  --text-primary: #f3f4f6;
-  --text-secondary: #d1d5db;
-  --text-muted: #9ca3af;
-  --hover-bg: rgba(255, 255, 255, 0.05);
-  --dropzone-bg: rgba(255, 255, 255, 0.02);
-  --dropzone-hover-bg: rgba(99, 102, 241, 0.1);
-  --dropzone-success-bg: rgba(34, 197, 94, 0.1);
-  
-  color-scheme: dark;
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
-}
-
-/* Light theme */
-:root[data-theme="light"] {
-  --bg-primary: #f8fafc;
-  --bg-secondary: #f1f5f9;
-  --card-bg: #ffffff;
-  --border-color: #e2e8f0;
-  --text-primary: #1e293b;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
-  --hover-bg: rgba(0, 0, 0, 0.05);
-  --dropzone-bg: rgba(0, 0, 0, 0.02);
-  --dropzone-hover-bg: rgba(99, 102, 241, 0.08);
-  --dropzone-success-bg: rgba(34, 197, 94, 0.08);
-  
   color-scheme: light;
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
+}
+
+:root[data-theme="dark"] {
+  --bg-primary: #171916;
+  --bg-secondary: #20231f;
+  --card-bg: #242721;
+  --surface-muted: #1d201c;
+  --border-color: #42463e;
+  --border-strong: #777c71;
+  --text-primary: #efede6;
+  --text-secondary: #c4c5bd;
+  --text-muted: #9b9e94;
+  --primary-color: #86a6ff;
+  --primary-hover: #adc1ff;
+  --success-color: #8ec9aa;
+  --success-bg: #253a30;
+  --danger-color: #ef9b8f;
+  --danger-bg: #442c28;
+  --warning-color: #e3b96b;
+  --hover-bg: #2d302a;
+  --dropzone-bg: #242721;
+  --dropzone-hover-bg: #292d27;
+  --dropzone-success-bg: #243229;
+
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
+html {
   min-width: 320px;
-  min-height: 100vh;
+  background: var(--bg-primary);
 }
 
-h1, h2, h3, h4, h5, h6 {
-  line-height: 1.2;
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+label,
+select {
+  -webkit-tap-highlight-color: transparent;
 }
 
 a {
-  font-weight: 500;
-  color: var(--primary-color);
-  text-decoration: inherit;
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
 }
 
 a:hover {
-  color: var(--primary-hover);
+  color: var(--primary-color);
 }
 
-button {
-  font-family: inherit;
+::selection {
+  background: var(--primary-color);
+  color: var(--card-bg);
 }
 
-/* System theme preference */
-@media (prefers-color-scheme: light) {
-  :root[data-theme="system"] {
-    --bg-primary: #f8fafc;
-    --bg-secondary: #f1f5f9;
-    --card-bg: #ffffff;
-    --border-color: #e2e8f0;
-    --text-primary: #1e293b;
-    --text-secondary: #475569;
-    --text-muted: #64748b;
-    --hover-bg: rgba(0, 0, 0, 0.05);
-    --dropzone-bg: rgba(0, 0, 0, 0.02);
-    --dropzone-hover-bg: rgba(99, 102, 241, 0.08);
-    --dropzone-success-bg: rgba(34, 197, 94, 0.08);
-    
-    color-scheme: light;
-    color: var(--text-primary);
-    background-color: var(--bg-primary);
-  }
+:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
-    --bg-primary: #0f0f0f;
-    --bg-secondary: #1a1a1a;
-    --card-bg: #1e1e1e;
-    --border-color: #374151;
-    --text-primary: #f3f4f6;
-    --text-secondary: #d1d5db;
-    --text-muted: #9ca3af;
-    --hover-bg: rgba(255, 255, 255, 0.05);
-    --dropzone-bg: rgba(255, 255, 255, 0.02);
-    --dropzone-hover-bg: rgba(99, 102, 241, 0.1);
-    --dropzone-success-bg: rgba(34, 197, 94, 0.1);
-    
+    --bg-primary: #171916;
+    --bg-secondary: #20231f;
+    --card-bg: #242721;
+    --surface-muted: #1d201c;
+    --border-color: #42463e;
+    --border-strong: #777c71;
+    --text-primary: #efede6;
+    --text-secondary: #c4c5bd;
+    --text-muted: #9b9e94;
+    --primary-color: #86a6ff;
+    --primary-hover: #adc1ff;
+    --success-color: #8ec9aa;
+    --success-bg: #253a30;
+    --danger-color: #ef9b8f;
+    --danger-bg: #442c28;
+    --warning-color: #e3b96b;
+    --hover-bg: #2d302a;
+    --dropzone-bg: #242721;
+    --dropzone-hover-bg: #292d27;
+    --dropzone-success-bg: #243229;
+
     color-scheme: dark;
-    color: var(--text-primary);
-    background-color: var(--bg-primary);
   }
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

@@ -17,7 +17,6 @@ import { computeTextDiff, computeStats } from './utils/diffUtils';
 import type { DiffPart, DiffStats } from './utils/diffUtils';
 import { exportDiffToPDF } from './utils/exportUtils';
 import './App.css';
-import pdfIcon from '/pdf-icon.svg';
 
 interface PageDiffResult {
   pageNumber: number;
@@ -116,7 +115,7 @@ function App() {
       
       setOriginalDoc(originalDoc);
       setModifiedDoc(modifiedDoc);
-    } catch (err) {
+    } catch {
       setError('Failed to load demo PDFs. Please try again.');
     } finally {
       setIsProcessing(false);
@@ -203,79 +202,93 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="header-top">
-          <div className="logo-section">
-            <div>
-              <img src={pdfIcon} alt="PDF Diff" className="logo-icon" />
-              <h1>PDF Diff</h1>
-            </div>
-            <p className="tagline">Compare PDFs privately and securely in your browser</p>
-          </div>
+        <a className="wordmark" href="/" aria-label="PDF Diff home">
+          <span className="wordmark-mark" aria-hidden="true">D/</span>
+          <span>PDF Diff</span>
+        </a>
+        <div className="header-actions">
+          <span className="local-status">
+            <span aria-hidden="true" />
+            Runs on this device
+          </span>
+          <nav className="header-nav" aria-label="Project links">
+            <a href="/cli.html">CLI</a>
+            <a href="https://github.com/qiu2025/diff" target="_blank" rel="noopener noreferrer">GitHub</a>
+          </nav>
           <ThemeToggle theme={theme} onThemeChange={setTheme} />
         </div>
       </header>
 
       <main className="app-main">
-        <PrivacyBanner />
+        <section className={`hero${showComparison ? ' hero-compact' : ''}`} aria-labelledby="page-title">
+          <div className="hero-copy">
+            <p className="eyebrow">Document review / Local-first</p>
+            <h1 id="page-title">See exactly<br />what changed.</h1>
+            <p className="hero-intro">
+              Compare the text in two PDF versions without handing either document to a server.
+            </p>
+            <PrivacyBanner />
+          </div>
 
-        {error && (
-          <div className="error-banner">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-            <span>{error}</span>
-          </div>
-        )}
+          <section className="upload-section" aria-labelledby="upload-title">
+            <div className="upload-header">
+              <div>
+                <p className="section-index">01 / New comparison</p>
+                <h2 id="upload-title">Choose two documents</h2>
+              </div>
+              <button type="button" className="demo-btn" onClick={handleTryDemo} disabled={isProcessing}>
+                Use sample files
+                <span aria-hidden="true">↗</span>
+              </button>
+            </div>
 
-        <section className="upload-section">
-          <div className="upload-header">
-            <h2>Upload Documents</h2>
-            <button className="demo-btn" onClick={handleTryDemo} disabled={isProcessing}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
-              Try Demo
-            </button>
-          </div>
-          <div className="upload-grid">
-            <PDFDropZone
-              label="Original PDF"
-              file={originalFile}
-              onFileSelect={handleOriginalFile}
-              disabled={isProcessing}
-            />
-            <PDFDropZone
-              label="Modified PDF"
-              file={modifiedFile}
-              onFileSelect={handleModifiedFile}
-              disabled={isProcessing}
-            />
-          </div>
-          
-          {(originalFile || modifiedFile) && (
-            <button className="reset-btn" onClick={handleReset} disabled={isProcessing}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="1 4 1 10 7 10"></polyline>
-                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-              </svg>
-              Start Over
-            </button>
-          )}
+            {error && (
+              <div className="error-banner" role="alert">
+                <span aria-hidden="true">!</span>
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="upload-grid">
+              <PDFDropZone
+                label="Original PDF"
+                file={originalFile}
+                onFileSelect={handleOriginalFile}
+                disabled={isProcessing}
+              />
+              <PDFDropZone
+                label="Modified PDF"
+                file={modifiedFile}
+                onFileSelect={handleModifiedFile}
+                disabled={isProcessing}
+              />
+            </div>
+
+            <div className="upload-footer">
+              <span>PDF files · text comparison · no upload</span>
+              {(originalFile || modifiedFile) && (
+                <button type="button" className="reset-btn" onClick={handleReset} disabled={isProcessing}>
+                  Clear both files
+                </button>
+              )}
+            </div>
+
+            {isProcessing && (
+              <div className="processing-indicator" role="status" aria-live="polite">
+                <span className="spinner" aria-hidden="true" />
+                Reading documents…
+              </div>
+            )}
+          </section>
         </section>
 
-        {isProcessing && (
-          <div className="processing-indicator">
-            <div className="spinner"></div>
-            <span>Processing PDFs...</span>
-          </div>
-        )}
-
         {showComparison && (
-          <section className="comparison-section">
+          <section className="comparison-section" aria-labelledby="results-title">
             <div className="comparison-header">
-              <h2>Comparison Results</h2>
+              <div>
+                <p className="section-index">02 / Review</p>
+                <h2 id="results-title">Comparison results</h2>
+              </div>
               <div className="comparison-actions">
                 <ViewModeTabs activeMode={viewMode} onModeChange={setViewMode} />
                 <ExportButton onClick={handleExport} disabled={!originalDoc || !modifiedDoc} />
@@ -298,7 +311,7 @@ function App() {
                     checked={showAllPages}
                     onChange={(e) => setShowAllPages(e.target.checked)}
                   />
-                  <span>Show all pages</span>
+                  <span>Review all pages</span>
                 </label>
               </div>
             )}
@@ -307,12 +320,12 @@ function App() {
               allPagesDiffs ? (
                 <div className="all-pages-view">
                   {allPagesDiffs.map(({ pageNumber, parts, originalText, modifiedText, stats: pageStats }) => (
-                    <div key={pageNumber} className="page-section">
+                    <section key={pageNumber} className="page-section" aria-labelledby={`page-${pageNumber}-title`}>
                       <div className="page-section-header">
-                        <h3>Page {pageNumber}</h3>
-                        <div className="page-stats">
+                        <h3 id={`page-${pageNumber}-title`}>Page {pageNumber}</h3>
+                        <div className="page-stats" aria-label={`${pageStats.additions} additions and ${pageStats.deletions} removals`}>
                           <span className="stat-badge additions">+{pageStats.additions}</span>
-                          <span className="stat-badge deletions">-{pageStats.deletions}</span>
+                          <span className="stat-badge deletions">−{pageStats.deletions}</span>
                         </div>
                       </div>
                       <DiffView
@@ -321,10 +334,10 @@ function App() {
                         originalText={originalText}
                         modifiedText={modifiedText}
                       />
-                    </div>
-                    ))}
-                  </div>
-                ) : null
+                    </section>
+                  ))}
+                </div>
+              ) : null
             ) : (
               diffParts && (
                 <DiffView
@@ -338,21 +351,14 @@ function App() {
           </section>
         )}
 
-        <PrivacyFeatures />
+        {!showComparison && <PrivacyFeatures />}
       </main>
 
       <footer className="app-footer">
-        <p>
-          Made with ❤️ for privacy-conscious users
-        </p>
+        <p>PDF Diff — a small, local document review tool.</p>
         <div className="footer-links">
-          <a href="https://github.com/qiu2025/diff" target="_blank" rel="noopener noreferrer">
-            GitHub
-          </a>
-          <span>·</span>
-          <a href="/cli.html">
-            CLI Docs
-          </a>
+          <a href="https://github.com/qiu2025/diff" target="_blank" rel="noopener noreferrer">Source</a>
+          <a href="/cli.html">CLI documentation</a>
         </div>
       </footer>
     </div>

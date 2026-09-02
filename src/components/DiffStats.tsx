@@ -8,46 +8,35 @@ interface DiffStatsProps {
   changePercentage: number;
 }
 
-export function DiffStats({ additions, deletions, unchanged }: DiffStatsProps) {
+export function DiffStats({ additions, deletions, unchanged, changePercentage }: DiffStatsProps) {
   const total = additions + deletions + unchanged;
   const additionPercent = total > 0 ? (additions / total) * 100 : 0;
   const deletionPercent = total > 0 ? (deletions / total) * 100 : 0;
 
   return (
-    <div className="diff-stats">
-      <div className="stat-item additions">
-        <div className="stat-icon">+</div>
-        <div className="stat-info">
-          <span className="stat-value">{additions}</span>
-          <span className="stat-label">words added</span>
+    <section className="diff-stats" aria-label="Comparison summary">
+      <div className="change-rate">
+        <span>Changed</span>
+        <strong>{changePercentage.toFixed(1)}%</strong>
+      </div>
+      <dl className="stat-list">
+        <div className="stat-item additions">
+          <dt>Added</dt>
+          <dd>+{additions}</dd>
         </div>
-      </div>
-      <div className="stat-item removals">
-        <div className="stat-icon">−</div>
-        <div className="stat-info">
-          <span className="stat-value">{deletions}</span>
-          <span className="stat-label">words removed</span>
+        <div className="stat-item removals">
+          <dt>Removed</dt>
+          <dd>−{deletions}</dd>
         </div>
-      </div>
-      <div className="stat-item unchanged">
-        <div className="stat-icon">=</div>
-        <div className="stat-info">
-          <span className="stat-value">{unchanged}</span>
-          <span className="stat-label">words unchanged</span>
+        <div className="stat-item unchanged">
+          <dt>Unchanged</dt>
+          <dd>{unchanged}</dd>
         </div>
+      </dl>
+      <div className="stat-bar" aria-hidden="true">
+        <span className="stat-bar-segment additions" style={{ width: `${additionPercent}%` }} />
+        <span className="stat-bar-segment removals" style={{ width: `${deletionPercent}%` }} />
       </div>
-      <div className="stat-bar">
-        <div 
-          className="stat-bar-segment additions" 
-          style={{ width: `${additionPercent}%` }}
-          title={`${additions} additions`}
-        />
-        <div 
-          className="stat-bar-segment removals" 
-          style={{ width: `${deletionPercent}%` }}
-          title={`${deletions} deletions`}
-        />
-      </div>
-    </div>
+    </section>
   );
 }

@@ -1,51 +1,44 @@
 .view-mode-tabs {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  background: var(--bg-secondary, #1e1e1e);
-  border-radius: 12px;
-  flex-wrap: wrap;
+  align-items: center;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-color);
+  scrollbar-width: none;
+}
+
+.view-mode-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .view-mode-tab {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
-  border: none;
+  min-height: 40px;
+  padding: 0.65rem 0.75rem;
+  margin-bottom: -1px;
   background: transparent;
-  color: var(--text-muted, #9ca3af);
-  border-radius: 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .view-mode-tab:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.05));
-  color: var(--text-primary, #f3f4f6);
+  color: var(--text-primary);
 }
 
 .view-mode-tab.active {
-  background: var(--primary-color, #6366f1);
-  color: white;
+  border-bottom-color: var(--primary-color);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
-.view-mode-tab svg {
-  flex-shrink: 0;
-}
-
-@media (max-width: 640px) {
+@media (max-width: 560px) {
   .view-mode-tabs {
-    justify-content: center;
-  }
-
-  .view-mode-tab span {
-    display: none;
+    width: 100%;
   }
 
   .view-mode-tab {
-    padding: 0.75rem;
+    flex: 1 0 auto;
   }
 }

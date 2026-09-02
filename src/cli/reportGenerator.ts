@@ -30,269 +30,419 @@ export function generateHtmlReport(data: ReportData): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDF Diff Report</title>
   <style>
+    :root {
+      --canvas: #f1efe8;
+      --paper: #fbfaf6;
+      --paper-muted: #e9e6de;
+      --ink: #1b1e1a;
+      --ink-soft: #444a43;
+      --muted: #686d65;
+      --rule: #c9c7be;
+      --rule-strong: #8e938b;
+      --accent: #2457d6;
+      --accent-soft: #e4eaff;
+      --added: #245f3a;
+      --added-soft: #dcebdd;
+      --removed: #8b3028;
+      --removed-soft: #f1deda;
+      color-scheme: light;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
-    
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      line-height: 1.6;
-      color: #333;
-      background: #f5f5f5;
-      padding: 20px;
+
+    html {
+      scroll-behavior: smooth;
     }
-    
+
+    body {
+      padding: 24px;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    ::selection {
+      background: var(--accent);
+      color: #fff;
+    }
+
     .container {
       max-width: 1200px;
       margin: 0 auto;
-      background: white;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
       overflow: hidden;
+      border: 1px solid var(--rule-strong);
+      border-top: 4px solid var(--accent);
+      background: var(--paper);
     }
-    
+
     header {
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-      color: white;
-      padding: 30px;
+      padding: 38px 40px 34px;
+      border-bottom: 1px solid var(--rule-strong);
+      background: var(--paper);
+      color: var(--ink);
     }
-    
+
     header h1 {
-      font-size: 28px;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
+      font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      font-size: clamp(34px, 5vw, 52px);
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 1;
     }
-    
+
     header .meta {
-      opacity: 0.9;
-      font-size: 14px;
+      color: var(--muted);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
-    
+
     .summary {
-      padding: 30px;
-      border-bottom: 1px solid #e5e7eb;
+      padding: 32px 40px 40px;
+      border-bottom: 1px solid var(--rule-strong);
     }
-    
+
     .files {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 30px;
+      margin-bottom: 28px;
+      border-top: 1px solid var(--rule);
+      border-left: 1px solid var(--rule);
     }
-    
+
     .file-card {
-      background: #f9fafb;
-      padding: 15px;
-      border-radius: 8px;
-      border: 1px solid #e5e7eb;
+      min-width: 0;
+      padding: 18px 20px;
+      border-right: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      background: transparent;
     }
-    
+
     .file-card h3 {
-      font-size: 12px;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.09em;
       text-transform: uppercase;
-      color: #6b7280;
-      margin-bottom: 5px;
     }
-    
+
+    .file-card:first-child h3::before {
+      content: "01 / ";
+      color: var(--accent);
+    }
+
+    .file-card:last-child h3::before {
+      content: "02 / ";
+      color: var(--accent);
+    }
+
     .file-card .filename {
+      color: var(--ink);
+      font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      font-size: 18px;
       font-weight: 600;
       word-break: break-all;
     }
-    
+
     .file-card .pages {
-      color: #6b7280;
-      font-size: 14px;
-      margin-top: 5px;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
     }
-    
+
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 15px;
+      border-top: 1px solid var(--rule);
+      border-left: 1px solid var(--rule);
     }
-    
+
     .stat-card {
-      text-align: center;
-      padding: 20px;
-      border-radius: 8px;
-      background: #f9fafb;
+      padding: 18px 20px 20px;
+      border-top: 3px solid var(--rule-strong);
+      border-right: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      background: transparent;
+      text-align: left;
     }
-    
+
     .stat-card.additions {
-      background: #dcfce7;
-      color: #166534;
+      border-top-color: var(--added);
+      color: var(--added);
     }
-    
+
     .stat-card.deletions {
-      background: #fee2e2;
-      color: #991b1b;
+      border-top-color: var(--removed);
+      color: var(--removed);
     }
-    
+
     .stat-card.unchanged {
-      background: #f3f4f6;
-      color: #4b5563;
+      color: var(--ink-soft);
     }
-    
+
     .stat-card.percentage {
-      background: #e0e7ff;
-      color: #3730a3;
+      border-top-color: var(--accent);
+      color: var(--accent);
     }
-    
+
     .stat-card .value {
-      font-size: 32px;
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: clamp(24px, 4vw, 34px);
       font-weight: 700;
+      line-height: 1.1;
     }
-    
+
     .stat-card .label {
-      font-size: 12px;
+      margin-top: 7px;
+      color: var(--muted);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      margin-top: 5px;
     }
-    
+
     .page-index {
-      padding: 20px 30px;
-      background: #f9fafb;
-      border-bottom: 1px solid #e5e7eb;
+      padding: 26px 40px 30px;
+      border-bottom: 1px solid var(--rule-strong);
+      background: var(--paper-muted);
     }
-    
+
     .page-index h2 {
-      font-size: 18px;
-      margin-bottom: 15px;
+      margin-bottom: 16px;
+      color: var(--ink);
+      font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      font-size: 20px;
+      font-weight: 500;
+      letter-spacing: -0.015em;
     }
-    
+
     .page-chips {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 7px;
     }
-    
+
     .page-chip {
       display: inline-block;
-      padding: 6px 12px;
-      border-radius: 20px;
-      font-size: 14px;
+      padding: 7px 11px;
+      border: 1px solid var(--rule-strong);
+      color: var(--ink-soft);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
       text-decoration: none;
-      transition: transform 0.2s;
     }
-    
+
     .page-chip:hover {
-      transform: scale(1.05);
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
     }
-    
+
+    .page-chip:focus-visible,
+    footer a:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+
     .page-chip.changed {
-      background: #fef3c7;
-      color: #92400e;
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
     }
-    
+
+    .page-chip.changed:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+
     .page-chip.unchanged {
-      background: #e5e7eb;
-      color: #6b7280;
+      background: transparent;
+      color: var(--muted);
     }
-    
+
     .diff-content {
-      padding: 30px;
+      padding: 40px;
     }
-    
+
     .page-diff {
-      margin-bottom: 40px;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
+      margin-bottom: 32px;
       overflow: hidden;
+      border: 1px solid var(--rule-strong);
+      background: var(--paper);
     }
-    
+
+    .page-diff:last-child {
+      margin-bottom: 0;
+    }
+
     .page-header {
-      background: #f9fafb;
-      padding: 15px 20px;
-      border-bottom: 1px solid #e5e7eb;
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--rule);
+      background: var(--paper-muted);
     }
-    
+
     .page-header h3 {
-      font-size: 16px;
+      color: var(--ink);
+      font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      font-size: 17px;
+      font-weight: 600;
     }
-    
+
     .page-header .badge {
-      font-size: 12px;
-      padding: 4px 10px;
-      border-radius: 12px;
+      padding: 4px 8px;
+      border: 1px solid currentColor;
+      background: transparent;
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
-    
+
     .page-header .badge.changed {
-      background: #fef3c7;
-      color: #92400e;
+      color: var(--removed);
     }
-    
+
     .page-header .badge.unchanged {
-      background: #dcfce7;
-      color: #166534;
+      color: var(--added);
     }
-    
+
     .diff-text {
-      padding: 20px;
-      font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+      padding: 22px;
+      background: var(--paper);
+      color: var(--ink-soft);
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
       font-size: 13px;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      background: #fafafa;
       line-height: 1.8;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
-    
+
     .diff-added {
-      background: #dcfce7;
-      color: #166534;
       padding: 2px 0;
-    }
-    
-    .diff-removed {
-      background: #fee2e2;
-      color: #991b1b;
-      padding: 2px 0;
-      text-decoration: line-through;
-    }
-    
-    footer {
-      background: #f9fafb;
-      padding: 20px 30px;
-      text-align: center;
-      font-size: 14px;
-      color: #6b7280;
-      border-top: 1px solid #e5e7eb;
-    }
-    
-    footer a {
-      color: #6366f1;
-      text-decoration: none;
-    }
-    
-    footer a:hover {
+      background: var(--added-soft);
+      color: var(--added);
       text-decoration: underline;
+      text-decoration-color: var(--added);
+      text-decoration-thickness: 2px;
+      text-underline-offset: 2px;
     }
-    
+
+    .diff-removed {
+      padding: 2px 0;
+      background: var(--removed-soft);
+      color: var(--removed);
+      text-decoration: line-through;
+      text-decoration-thickness: 2px;
+    }
+
+    footer {
+      padding: 20px 30px;
+      border-top: 1px solid var(--rule-strong);
+      background: var(--paper-muted);
+      color: var(--muted);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--ink);
+      text-decoration-color: var(--rule-strong);
+      text-underline-offset: 2px;
+    }
+
+    footer a:hover {
+      color: var(--accent);
+    }
+
     @media print {
+      html {
+        scroll-behavior: auto;
+      }
+
       body {
-        background: white;
         padding: 0;
+        background: #fff;
       }
-      
+
       .container {
-        box-shadow: none;
+        border: 0;
       }
-      
+
       .page-diff {
+        break-inside: avoid;
         page-break-inside: avoid;
       }
     }
-    
+
     @media (max-width: 768px) {
+      body {
+        padding: 0;
+      }
+
+      .container {
+        border-right: 0;
+        border-left: 0;
+      }
+
+      header,
+      .summary,
+      .page-index,
+      .diff-content {
+        padding-right: 18px;
+        padding-left: 18px;
+      }
+
+      header {
+        padding-top: 28px;
+        padding-bottom: 26px;
+      }
+
       .files {
         grid-template-columns: 1fr;
       }
-      
+
       .stats-grid {
         grid-template-columns: repeat(2, 1fr);
+      }
+
+      .stat-card {
+        padding: 15px;
+      }
+
+      .diff-content {
+        padding-top: 24px;
+        padding-bottom: 24px;
+      }
+
+      .diff-text {
+        padding: 16px;
+        font-size: 12px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
       }
     }
   </style>
@@ -300,7 +450,7 @@ export function generateHtmlReport(data: ReportData): string {
 <body>
   <div class="container">
     <header>
-      <h1>📄 PDF Diff Report</h1>
+      <h1>PDF Diff Report</h1>
       <div class="meta">Generated on ${escapeHtml(generatedAt)}</div>
     </header>
     

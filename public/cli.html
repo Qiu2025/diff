@@ -4,355 +4,468 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDF Diff CLI - Command Line PDF Comparison Tool</title>
-  <meta name="robots" content="niindex, nifollow">
+  <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/svg+xml" href="/pdf-icon.svg">
   
-  <meta name="theme-color" content="#6366f1">
+  <meta name="theme-color" content="#f1efe8">
   
   <style>
     :root {
-      --bg-primary: #0f0f0f;
-      --bg-secondary: #1a1a1a;
-      --bg-tertiary: #252525;
-      --text-primary: #f3f4f6;
-      --text-secondary: #d1d5db;
-      --text-muted: #9ca3af;
-      --primary-color: #6366f1;
-      --primary-hover: #818cf8;
-      --success-color: #22c55e;
-      --danger-color: #ef4444;
-      --warning-color: #f59e0b;
-      --border-color: #374151;
-      --code-bg: #1e1e1e;
+      --canvas: #f1efe8;
+      --paper: #fbfaf6;
+      --paper-muted: #e9e6de;
+      --ink: #1b1e1a;
+      --ink-soft: #444a43;
+      --muted: #686d65;
+      --rule: #c9c7be;
+      --rule-strong: #8e938b;
+      --accent: #2457d6;
+      --accent-hover: #173e9f;
+      --success: #245f3a;
+      --warning: #805300;
+      --code-bg: #181b19;
+      --code-text: #f4f1e8;
+      --code-muted: #a7aca3;
+      color-scheme: light;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
     }
-    
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
-    
+
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      line-height: 1.6;
+      min-width: 320px;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.65;
     }
-    
+
+    ::selection {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    a {
+      color: var(--accent);
+      text-underline-offset: 0.18em;
+    }
+
+    a:hover {
+      color: var(--accent-hover);
+    }
+
+    a:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 4px;
+    }
+
     .container {
-      max-width: 900px;
+      width: min(100%, 960px);
       margin: 0 auto;
-      padding: 2rem;
+      padding: 0 2rem;
     }
-    
-    /* Header */
+
     header {
-      text-align: center;
-      padding: 3rem 2rem;
-      border-bottom: 1px solid var(--border-color);
+      width: min(100%, 960px);
+      margin: 0 auto;
+      padding: 2.5rem 2rem 4.5rem;
+      border-bottom: 1px solid var(--rule-strong);
+      text-align: left;
     }
-    
+
     .logo-link {
       display: inline-flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.65rem;
+      margin-bottom: 3.5rem;
+      color: var(--ink);
       text-decoration: none;
-      margin-bottom: 1rem;
     }
-    
+
+    .logo-link:hover {
+      color: var(--accent);
+    }
+
     .logo-link img {
-      width: 48px;
-      height: 48px;
+      width: 30px;
+      height: 30px;
+      filter: grayscale(1) contrast(1.5);
     }
-    
+
     .logo-link h1 {
-      font-size: 2rem;
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
     }
-    
+
     header h2 {
-      font-size: 1.75rem;
-      color: var(--text-primary);
-      margin-bottom: 0.5rem;
-    }
-    
-    header p {
-      color: var(--text-muted);
-      font-size: 1.1rem;
-    }
-    
-    .badge {
-      display: inline-block;
-      background: var(--primary-color);
-      color: white;
-      padding: 0.25rem 0.75rem;
-      border-radius: 20px;
-      font-size: 0.85rem;
+      max-width: 12ch;
+      margin-bottom: 1.25rem;
+      color: var(--ink);
+      font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      font-size: clamp(3rem, 8vw, 5.6rem);
       font-weight: 500;
-      margin-top: 1rem;
+      letter-spacing: -0.055em;
+      line-height: 0.94;
     }
-    
-    /* Navigation */
+
+    header p {
+      max-width: 42ch;
+      color: var(--ink-soft);
+      font-size: 1.05rem;
+    }
+
     .back-link {
       display: inline-flex;
       align-items: center;
       gap: 0.5rem;
-      color: var(--primary-color);
+      padding: 1.25rem 0;
+      color: var(--ink-soft);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
       text-decoration: none;
-      padding: 1rem 0;
+      text-transform: uppercase;
     }
-    
+
     .back-link:hover {
-      text-decoration: underline;
+      color: var(--accent);
     }
-    
-    /* Sections */
+
+    main {
+      counter-reset: doc-section;
+    }
+
     section {
-      padding: 2rem 0;
-      border-bottom: 1px solid var(--border-color);
+      counter-increment: doc-section;
+      padding: 3.75rem 0;
+      border-bottom: 1px solid var(--rule);
     }
-    
+
     section:last-of-type {
-      border-bottom: none;
+      border-bottom: 0;
     }
-    
-    h3 {
-      font-size: 1.5rem;
-      color: var(--text-primary);
-      margin-bottom: 1rem;
+
+    section > h3,
+    section > .install-box > h3 {
       display: flex;
-      align-items: center;
-      gap: 0.5rem;
+      align-items: baseline;
+      gap: 0.8rem;
+      margin-bottom: 1.5rem;
+      color: var(--ink);
+      font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      font-size: clamp(1.8rem, 4vw, 2.5rem);
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      line-height: 1.1;
     }
-    
-    h3 .icon {
-      color: var(--primary-color);
+
+    section > h3::before,
+    section > .install-box > h3::before {
+      content: counter(doc-section, decimal-leading-zero) " /";
+      color: var(--accent);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
     }
-    
+
     h4 {
-      font-size: 1.1rem;
-      color: var(--text-secondary);
-      margin: 1.5rem 0 0.75rem;
+      margin: 2rem 0 0.65rem;
+      color: var(--ink);
+      font-size: 1rem;
+      font-weight: 700;
     }
-    
+
     p {
-      color: var(--text-secondary);
       margin-bottom: 1rem;
+      color: var(--ink-soft);
     }
-    
-    /* Code blocks */
+
     pre {
-      background: var(--code-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
+      position: relative;
+      margin: 1rem 0;
       padding: 1rem 1.25rem;
       overflow-x: auto;
-      margin: 1rem 0;
-      position: relative;
+      border: 1px solid var(--ink);
+      background: var(--code-bg);
+      color: var(--code-text);
     }
-    
+
     code {
-      font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
-      font-size: 0.9rem;
-      color: var(--text-primary);
+      color: inherit;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      font-size: 0.88rem;
     }
-    
+
     .code-comment {
-      color: #6b7280;
+      color: var(--code-muted);
     }
-    
+
     .code-command {
-      color: #22c55e;
+      color: #8bd09f;
     }
-    
+
     .code-flag {
-      color: #f59e0b;
+      color: #e7bb68;
     }
-    
+
     .code-string {
-      color: #60a5fa;
+      color: #91adff;
     }
-    
-    /* Inline code */
-    p code, li code, td code {
-      background: var(--bg-tertiary);
-      padding: 0.2rem 0.4rem;
-      border-radius: 4px;
-      font-size: 0.85rem;
+
+    p code,
+    li code,
+    td code {
+      padding: 0.12rem 0.32rem;
+      border: 1px solid var(--rule);
+      background: var(--paper-muted);
+      color: var(--ink);
+      font-size: 0.84rem;
     }
-    
-    /* Tables */
+
     table {
       width: 100%;
-      border-collapse: collapse;
       margin: 1rem 0;
+      border-collapse: collapse;
     }
-    
-    th, td {
-      text-align: left;
-      padding: 0.75rem 1rem;
-      border: 1px solid var(--border-color);
-    }
-    
-    th {
-      background: var(--bg-secondary);
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-    
+
+    th,
     td {
-      color: var(--text-secondary);
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--rule);
+      color: var(--ink-soft);
+      text-align: left;
+      vertical-align: top;
     }
-    
+
+    th {
+      background: var(--paper-muted);
+      color: var(--ink);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
     tr:nth-child(even) {
-      background: var(--bg-secondary);
+      background: rgba(251, 250, 246, 0.58);
     }
-    
-    /* Lists */
-    ul, ol {
+
+    ul,
+    ol {
       margin: 1rem 0;
       padding-left: 1.5rem;
-      color: var(--text-secondary);
+      color: var(--ink-soft);
     }
-    
+
     li {
       margin: 0.5rem 0;
+      padding-left: 0.2rem;
     }
-    
-    /* Feature cards */
+
     .feature-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 1.5rem;
-      margin: 1.5rem 0;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 1.5rem 0 0;
+      border-top: 1px solid var(--rule);
+      border-left: 1px solid var(--rule);
     }
-    
+
     .feature-card {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
+      min-height: 11rem;
       padding: 1.5rem;
+      border-right: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      background: transparent;
     }
-    
+
     .feature-card h4 {
-      color: var(--text-primary);
       margin: 0 0 0.5rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
+      color: var(--ink);
+      font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      font-size: 1.3rem;
+      font-weight: 500;
     }
-    
-    .feature-card h4 .icon {
-      color: var(--success-color);
-    }
-    
+
     .feature-card p {
       margin: 0;
       font-size: 0.9rem;
     }
-    
-    /* Install box */
+
     .install-box {
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-      border: 1px solid rgba(99, 102, 241, 0.3);
-      border-radius: 12px;
-      padding: 2rem;
-      text-align: center;
-      margin: 2rem 0;
+      margin: 0;
+      padding: 2.25rem;
+      border: 1px solid var(--rule-strong);
+      border-left: 4px solid var(--accent);
+      background: var(--paper);
+      text-align: left;
     }
-    
-    .install-box h3 {
-      justify-content: center;
-      margin-bottom: 0.5rem;
-    }
-    
+
     .install-box pre {
-      display: inline-block;
-      margin: 1rem 0;
-      font-size: 1.1rem;
+      width: 100%;
+      margin: 1.25rem 0 0.75rem;
+      font-size: 1rem;
     }
-    
+
     .install-box .note {
-      font-size: 0.9rem;
-      color: var(--text-muted);
+      margin: 0;
+      color: var(--muted);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 0.76rem;
     }
-    
-    /* Alert boxes */
+
     .alert {
+      margin: 1.25rem 0;
       padding: 1rem 1.25rem;
-      border-radius: 8px;
-      margin: 1rem 0;
+      border: 1px solid var(--rule);
+      border-left-width: 4px;
+      background: var(--paper);
+      color: var(--ink-soft);
     }
-    
+
     .alert-info {
-      background: rgba(99, 102, 241, 0.1);
-      border: 1px solid rgba(99, 102, 241, 0.3);
-      color: var(--primary-hover);
+      border-left-color: var(--accent);
     }
-    
+
     .alert-warning {
-      background: rgba(245, 158, 11, 0.1);
-      border: 1px solid rgba(245, 158, 11, 0.3);
-      color: var(--warning-color);
+      border-left-color: var(--warning);
     }
-    
+
     .alert-success {
-      background: rgba(34, 197, 94, 0.1);
-      border: 1px solid rgba(34, 197, 94, 0.3);
-      color: var(--success-color);
+      border-left-color: var(--success);
     }
-    
-    /* Footer */
+
     footer {
+      padding: 2.5rem 2rem;
+      border-top: 1px solid var(--rule-strong);
+      color: var(--muted);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 0.75rem;
       text-align: center;
-      padding: 2rem;
-      border-top: 1px solid var(--border-color);
-      color: var(--text-muted);
-      font-size: 0.9rem;
     }
-    
+
+    footer p {
+      color: inherit;
+    }
+
     footer a {
-      color: var(--primary-color);
-      text-decoration: none;
+      color: var(--ink);
+      text-decoration-color: var(--rule-strong);
     }
-    
+
     footer a:hover {
-      text-decoration: underline;
+      color: var(--accent);
     }
-    
-    /* Responsive */
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas: #171916;
+        --paper: #20231f;
+        --paper-muted: #2a2d29;
+        --ink: #eeece4;
+        --ink-soft: #c4c6be;
+        --muted: #a7aaa1;
+        --rule: #42463f;
+        --rule-strong: #686d65;
+        --accent: #7ea0ff;
+        --accent-hover: #a9bdff;
+        --success: #86c89a;
+        --warning: #e0b35f;
+        --code-bg: #0e100e;
+        --code-text: #f4f1e8;
+        --code-muted: #93988f;
+        color-scheme: dark;
+      }
+
+      .logo-link img {
+        filter: grayscale(1) brightness(2);
+      }
+
+      tr:nth-child(even) {
+        background: rgba(32, 35, 31, 0.72);
+      }
+    }
+
     @media (max-width: 640px) {
       .container {
-        padding: 1rem;
+        padding: 0 1rem;
       }
-      
+
       header {
+        padding: 2rem 1rem 3rem;
+      }
+
+      .logo-link {
+        margin-bottom: 2.75rem;
+      }
+
+      header h2 {
+        font-size: clamp(2.7rem, 16vw, 4rem);
+      }
+
+      section {
+        padding: 2.75rem 0;
+      }
+
+      section > h3,
+      section > .install-box > h3 {
+        font-size: 1.75rem;
+      }
+
+      .install-box {
+        padding: 1.25rem;
+      }
+
+      .feature-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .feature-card {
+        min-height: 0;
+      }
+
+      pre {
+        padding: 0.9rem;
+      }
+
+      code,
+      table {
+        font-size: 0.78rem;
+      }
+
+      th,
+      td {
+        padding: 0.55rem;
+      }
+
+      footer {
         padding: 2rem 1rem;
       }
-      
-      h3 {
-        font-size: 1.25rem;
-      }
-      
-      pre {
-        font-size: 0.8rem;
-      }
-      
-      table {
-        font-size: 0.85rem;
-      }
-      
-      th, td {
-        padding: 0.5rem;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
       }
     }
   </style>
 </head>
 <body>
-  <div class="container" style="margin-bottom: 0; padding-bottom: 0;">
+  <div class="container">
     <a href="/" class="back-link">
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -362,7 +475,7 @@
     </a>
   </div>
   
-  <header style="margin-top: 1rem; padding-top: 0;">
+  <header>
     <a href="/" class="logo-link">
       <img src="/pdf-icon.svg" alt="PDF Diff">
       <h1>PDF Diff</h1>
@@ -371,12 +484,11 @@
     <p>Compare PDF documents from your terminal with zero install</p>
   </header>
   
-  <main class="container" style="margin-top: 0rem; padding-top: 0;">
+  <main class="container">
     <!-- Quick Start -->
     <section>
       <div class="install-box">
         <h3>
-          <span class="icon">⚡</span>
           Quick Start
         </h3>
         <p>Run directly with npx - no installation required!</p>
@@ -388,7 +500,6 @@
     <!-- Installation -->
     <section>
       <h3>
-        <span class="icon">📦</span>
         Installation
       </h3>
       
@@ -416,25 +527,24 @@
     <!-- Features -->
     <section>
       <h3>
-        <span class="icon">✨</span>
         Features
       </h3>
       
-      <div class="feature-grid" style="display: grid; grid-template-columns: repeat(2, 1fr);">
+      <div class="feature-grid">
         <div class="feature-card">
-          <h4><span class="icon">📄</span> Visual Reports</h4>
+          <h4>Visual Reports</h4>
           <p>Generate beautiful HTML and PDF reports showing all differences with syntax highlighting.</p>
         </div>
         <div class="feature-card">
-          <h4><span class="icon">🔄</span> CI/CD Ready</h4>
+          <h4>CI/CD Ready</h4>
           <p>Exit codes, JSON/JUnit output formats, and fail-on-diff flag for automated pipelines.</p>
         </div>
         <div class="feature-card">
-          <h4><span class="icon">🎯</span> Page Selection</h4>
+          <h4>Page Selection</h4>
           <p>Compare specific pages only with flexible page range syntax.</p>
         </div>
         <div class="feature-card">
-          <h4><span class="icon">💬</span> Interactive Mode</h4>
+          <h4>Interactive Mode</h4>
           <p>Guided prompts help you configure comparisons step by step.</p>
         </div>
       </div>
@@ -443,7 +553,6 @@
     <!-- Usage Examples -->
     <section>
       <h3>
-        <span class="icon">💻</span>
         Usage Examples
       </h3>
       
@@ -479,7 +588,6 @@
     <!-- CLI Options -->
     <section>
       <h3>
-        <span class="icon">⚙️</span>
         CLI Options
       </h3>
       
@@ -554,7 +662,6 @@
     <!-- Exit Codes -->
     <section>
       <h3>
-        <span class="icon">🚦</span>
         Exit Codes
       </h3>
       
@@ -585,7 +692,6 @@
     <!-- CI/CD Integration -->
     <section>
       <h3>
-        <span class="icon">🔄</span>
         CI/CD Integration
       </h3>
       
@@ -624,7 +730,6 @@ jobs:
     <!-- Output Formats -->
     <section>
       <h3>
-        <span class="icon">📊</span>
         Output Formats
       </h3>
       
@@ -665,7 +770,6 @@ jobs:
     <!-- Requirements -->
     <section>
       <h3>
-        <span class="icon">📋</span>
         Requirements
       </h3>
       
@@ -682,7 +786,6 @@ jobs:
     <!-- Troubleshooting -->
     <section>
       <h3>
-        <span class="icon">🔧</span>
         Troubleshooting
       </h3>
       
@@ -703,7 +806,7 @@ jobs:
   
 <footer>
     <p style="margin-bottom: 0;">
-      Made with ❤️ for privacy-conscious users
+      Made for privacy-conscious users
     </p>
     <p style="margin-top: 5px;">
       <a href="/">Web App</a>
