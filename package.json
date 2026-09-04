@@ -37,6 +37,7 @@
     "build": "tsc -b && vite build",
     "build:cli": "node scripts/build-cli.mjs",
     "lint": "eslint .",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "preview": "vite preview",
     "generate-demos": "node scripts/generate-demo-pdfs.mjs",
     "prepublishOnly": "npm run build:cli"

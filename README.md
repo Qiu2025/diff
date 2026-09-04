@@ -109,6 +109,9 @@ docker run -d \
 
 ## 🚀 Development
 
+Development and test commands require Node.js 22 or later. The published CLI
+continues to target Node.js 18 or later.
+
 ```bash
 # Clone the repository
 git clone https://github.com/qiu2025/diff.git

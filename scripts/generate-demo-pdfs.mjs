@@ -8,6 +8,8 @@ const __dirname = path.dirname(__filename);
 
 // Create Version 1 PDF
 const doc1 = new jsPDF();
+doc1.setCreationDate("D:20250101000000+00'00'");
+doc1.setFileId('00000000000000000000000000000001');
 doc1.setFontSize(16);
 doc1.text('Software License Agreement', 20, 20);
 doc1.setFontSize(12);
@@ -100,6 +102,8 @@ console.log('Created demo-original.pdf');
 
 // Create Version 2 PDF (Modified)
 const doc2 = new jsPDF();
+doc2.setCreationDate("D:20250301000000+00'00'");
+doc2.setFileId('00000000000000000000000000000002');
 doc2.setFontSize(16);
 doc2.text('Software License Agreement', 20, 20);
 doc2.setFontSize(12);
@@ -159,12 +163,6 @@ y += 10;
 doc2.text('Upon termination, you must delete all copies of the software.', 25, y);
 y += 15;
 
-doc2.text('7. Privacy', 20, y);
-y += 10;
-doc2.text('We collect minimal usage data to improve the software.', 25, y);
-y += 10;
-doc2.text('Your data is never sold to third parties.', 25, y);
-
 // Add second page
 doc2.addPage();
 y = 20;
@@ -174,6 +172,13 @@ doc2.text('Additional Terms', 20, y);
 y += 15;
 
 doc2.setFontSize(11);
+doc2.text('7. Privacy', 20, y);
+y += 10;
+doc2.text('We collect minimal usage data to improve the software.', 25, y);
+y += 10;
+doc2.text('Your data is never sold to third parties.', 25, y);
+y += 15;
+
 doc2.text('8. Liability Limitation', 20, y);
 y += 10;
 doc2.text('We are not liable for any damages arising from use of the software.', 25, y);
@@ -211,43 +216,6 @@ y += 15;
 doc2.text('By using this software, you agree to these terms and conditions.', 20, y);
 y += 10;
 doc2.text('Last updated: March 1, 2025', 20, y);
-
-// = 10;
-doc2.text('You may not reverse engineer or decompile the software.', 25, y);
-y += 10;
-doc2.text('You may not remove any copyright notices from the software.', 25, y);
-y += 15;
-
-doc2.text('4. Support and Updates', 20, y);
-y += 10;
-doc2.text('Technical support is provided via email and live chat.', 25, y);
-y += 10;
-doc2.text('Free updates are provided for one year from purchase.', 25, y);
-y += 10;
-doc2.text('Extended support is available for an additional fee.', 25, y);
-y += 15;
-
-doc2.text('5. Warranty', 20, y);
-y += 10;
-doc2.text('The software is provided "as is" without warranty.', 25, y);
-y += 10;
-doc2.text('We do not guarantee uninterrupted service.', 25, y);
-y += 10;
-doc2.text('However, we will fix critical bugs within 30 days of reporting.', 25, y);
-y += 15;
-
-doc2.text('6. Termination', 20, y);
-y += 10;
-doc2.text('This license terminates if you breach any terms.', 25, y);
-y += 10;
-doc2.text('Upon termination, you must delete all copies of the software.', 25, y);
-y += 15;
-
-doc2.text('7. Privacy', 20, y);
-y += 10;
-doc2.text('We collect minimal usage data to improve the software.', 25, y);
-y += 10;
-doc2.text('Your data is never sold to third parties.', 25, y);
 
 // Save Version 2
 const outputPath2 = path.join(__dirname, '../public/demo-modified.pdf');

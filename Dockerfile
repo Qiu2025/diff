@@ -1,5 +1,5 @@
 # 1：用 Node 镜像来安装依赖和编译代码
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
