@@ -12,8 +12,111 @@ export interface PageDiff {
   hasChanges: boolean;
 }
 
+export interface AlignedDiffRow {
+  parts: DiffPart[];
+}
+
+const GAP_PENALTY = 0.75;
+const MIN_LINE_SIMILARITY = 0.5;
+
+function normalizeLine(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^\d+(?:\.\d+)*[.)]?\s+/, '')
+    .replace(/\s+/g, ' ');
+}
+
+function lineSimilarity(left: string, right: string): number {
+  const normalizedLeft = normalizeLine(left);
+  const normalizedRight = normalizeLine(right);
+
+  if (normalizedLeft === normalizedRight) return 1;
+  if (!normalizedLeft || !normalizedRight) return 0;
+
+  const leftWords = new Set(normalizedLeft.match(/[\p{L}\p{N}]+/gu) ?? []);
+  const rightWords = new Set(normalizedRight.match(/[\p{L}\p{N}]+/gu) ?? []);
+  let sharedWords = 0;
+
+  leftWords.forEach(word => {
+    if (rightWords.has(word)) sharedWords += 1;
+  });
+
+  return (2 * sharedWords) / (leftWords.size + rightWords.size);
+}
+
+export function alignTextLines(oldText: string, newText: string): AlignedDiffRow[] {
+  const oldLines = oldText ? oldText.split('\n') : [];
+  const newLines = newText ? newText.split('\n') : [];
+  const directions = Array.from(
+    { length: oldLines.length + 1 },
+    () => new Uint8Array(newLines.length + 1)
+  );
+  let previousScores = new Float64Array(newLines.length + 1);
+
+  for (let j = 1; j <= newLines.length; j += 1) {
+    previousScores[j] = -j * GAP_PENALTY;
+    directions[0][j] = 3;
+  }
+
+  // ponytail: page-scoped O(lines²) alignment; add a budget if dense pages make this measurable.
+  for (let i = 1; i <= oldLines.length; i += 1) {
+    const currentScores = new Float64Array(newLines.length + 1);
+    currentScores[0] = -i * GAP_PENALTY;
+    directions[i][0] = 2;
+
+    for (let j = 1; j <= newLines.length; j += 1) {
+      const similarity = lineSimilarity(oldLines[i - 1], newLines[j - 1]);
+      const matchScore = similarity >= MIN_LINE_SIMILARITY
+        ? previousScores[j - 1] + similarity * 2
+        : Number.NEGATIVE_INFINITY;
+      const removalScore = previousScores[j] - GAP_PENALTY;
+      const additionScore = currentScores[j - 1] - GAP_PENALTY;
+
+      if (matchScore >= removalScore && matchScore >= additionScore) {
+        currentScores[j] = matchScore;
+        directions[i][j] = 1;
+      } else if (removalScore >= additionScore) {
+        currentScores[j] = removalScore;
+        directions[i][j] = 2;
+      } else {
+        currentScores[j] = additionScore;
+        directions[i][j] = 3;
+      }
+    }
+
+    previousScores = currentScores;
+  }
+
+  const rows: AlignedDiffRow[] = [];
+  let oldIndex = oldLines.length;
+  let newIndex = newLines.length;
+
+  while (oldIndex > 0 || newIndex > 0) {
+    const direction = directions[oldIndex][newIndex];
+
+    if (direction === 1) {
+      rows.push({ parts: diffWords(oldLines[oldIndex - 1], newLines[newIndex - 1]) });
+      oldIndex -= 1;
+      newIndex -= 1;
+    } else if (direction === 2) {
+      rows.push({ parts: [{ value: oldLines[oldIndex - 1], removed: true }] });
+      oldIndex -= 1;
+    } else {
+      rows.push({ parts: [{ value: newLines[newIndex - 1], added: true }] });
+      newIndex -= 1;
+    }
+  }
+
+  return rows.reverse();
+}
+
 export function computeTextDiff(oldText: string, newText: string): DiffPart[] {
-  return diffWords(oldText, newText);
+  const rows = alignTextLines(oldText, newText);
+
+  return rows.flatMap((row, index) => (
+    index === rows.length - 1 ? row.parts : [...row.parts, { value: '\n' }]
+  ));
 }
 
 export function computeLineDiff(oldText: string, newText: string): DiffPart[] {

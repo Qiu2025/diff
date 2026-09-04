@@ -3,7 +3,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { computeStats, computeTextDiff, hasChanges } from '../src/utils/diffUtils.ts';
+import { alignTextLines, computeStats, computeTextDiff, hasChanges } from '../src/utils/diffUtils.ts';
 import { extractTextFromPDFFile, parsePageSpec } from '../src/cli/pdfUtils.ts';
 import { generateHtmlReport, type ReportData } from '../src/cli/reportGenerator.ts';
 
@@ -36,6 +36,32 @@ test('diffUtils detects same, added, deleted, and replaced text and computes sta
     assert.equal(hasChanges(parts), changes);
     assert.deepEqual(computeStats(parts), stats);
   }
+});
+
+test('line alignment keeps inserted and renumbered sections with their headings', () => {
+  const original = [
+    'Additional Terms',
+    '7. Liability Limitation',
+    'Maximum liability is limited to the purchase price.',
+    '8. Dispute Resolution',
+  ].join('\n');
+  const modified = [
+    'Additional Terms',
+    '7. Privacy',
+    'Your data is never sold to third parties.',
+    '8. Liability Limitation',
+    'Maximum liability is limited to twice the purchase price.',
+    '9. Dispute Resolution',
+  ].join('\n');
+  const rows = alignTextLines(original, modified);
+  const sideText = (parts: typeof rows[number]['parts'], side: 'original' | 'modified') => parts
+    .filter(part => side === 'original' ? !part.added : !part.removed)
+    .map(part => part.value)
+    .join('');
+
+  assert.ok(rows.some(row => sideText(row.parts, 'original') === '' && sideText(row.parts, 'modified') === '7. Privacy'));
+  assert.ok(rows.some(row => sideText(row.parts, 'original') === '7. Liability Limitation' && sideText(row.parts, 'modified') === '8. Liability Limitation'));
+  assert.ok(rows.some(row => sideText(row.parts, 'original') === '8. Dispute Resolution' && sideText(row.parts, 'modified') === '9. Dispute Resolution'));
 });
 
 test('parsePageSpec returns sorted unique pages within the document', () => {

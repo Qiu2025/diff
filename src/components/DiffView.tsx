@@ -1,3 +1,4 @@
+import { alignTextLines } from '../utils/diffUtils';
 import type { DiffPart } from '../utils/diffUtils';
 import './DiffView.css';
 
@@ -10,40 +11,32 @@ interface DiffViewProps {
 
 export function DiffView({ parts, mode, originalText, modifiedText }: DiffViewProps) {
   if (mode === 'side-by-side' && originalText !== undefined && modifiedText !== undefined) {
+    const rows = alignTextLines(originalText, modifiedText);
+
     return (
       <div className="diff-view side-by-side">
-        <div className="diff-panel original">
-          <h4 className="panel-header">Original</h4>
-          <div className="diff-content">
-            {parts.map((part, index) => {
-              if (part.added) return null;
-              return (
-                <span
-                  key={index}
-                  className={part.removed ? 'diff-removed' : ''}
-                >
-                  {part.value}
-                </span>
-              );
-            })}
+        <h4 className="panel-header">Original</h4>
+        <h4 className="panel-header">Modified</h4>
+        <div className="diff-content diff-side-content">
+          {rows.map((row, rowIndex) => (
+            <div className="diff-side-row" key={rowIndex}>
+              <div className="diff-side-cell original">
+                {row.parts.map((part, partIndex) => !part.added && (
+                  <span key={partIndex} className={part.removed ? 'diff-removed' : ''}>
+                    {part.value}
+                  </span>
+                ))}
+              </div>
+              <div className="diff-side-cell modified">
+                {row.parts.map((part, partIndex) => !part.removed && (
+                  <span key={partIndex} className={part.added ? 'diff-added' : ''}>
+                    {part.value}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
           </div>
-        </div>
-        <div className="diff-panel modified">
-          <h4 className="panel-header">Modified</h4>
-          <div className="diff-content">
-            {parts.map((part, index) => {
-              if (part.removed) return null;
-              return (
-                <span
-                  key={index}
-                  className={part.added ? 'diff-added' : ''}
-                >
-                  {part.value}
-                </span>
-              );
-            })}
-          </div>
-        </div>
       </div>
     );
   }
