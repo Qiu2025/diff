@@ -27,6 +27,9 @@
 }
 
 .page-info {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 0.7rem;

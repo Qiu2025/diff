@@ -489,11 +489,11 @@ export function generateHtmlReport(data: ReportData): string {
     </section>
     
     <section class="page-index">
-      <h2>Page Overview (${changedPages.length} of ${pageDiffs.length} pages changed)</h2>
+      <h2>Page Overview (${changedPages.length} of ${pageDiffs.length} comparisons changed)</h2>
       <div class="page-chips">
         ${pageDiffs.map(p => `
           <a href="#page-${p.pageNumber}" class="page-chip ${p.hasChanges ? 'changed' : 'unchanged'}">
-            Page ${p.pageNumber}${p.hasChanges ? ' ✎' : ''}
+            ${p.label}${p.hasChanges ? ' ✎' : ''}
           </a>
         `).join('')}
       </div>
@@ -503,7 +503,7 @@ export function generateHtmlReport(data: ReportData): string {
       ${pageDiffs.map(pageDiff => `
         <div id="page-${pageDiff.pageNumber}" class="page-diff">
           <div class="page-header">
-            <h3>Page ${pageDiff.pageNumber}</h3>
+            <h3>${pageDiff.label}</h3>
             <span class="badge ${pageDiff.hasChanges ? 'changed' : 'unchanged'}">
               ${pageDiff.hasChanges ? 'Changed' : 'Unchanged'}
             </span>
@@ -560,7 +560,7 @@ export function generateTextOutput(data: ReportData): string {
   
   for (const page of pageDiffs) {
     const status = page.hasChanges ? '✎ CHANGED' : '✓ OK';
-    lines.push(`  Page ${page.pageNumber}: ${status}`);
+    lines.push(`  ${page.label}: ${status}`);
   }
   
   lines.push('');
@@ -581,6 +581,9 @@ export function generateJsonOutput(data: ReportData): string {
     statistics: data.overallStats,
     pages: data.pageDiffs.map(p => ({
       pageNumber: p.pageNumber,
+      comparisonNumber: p.pageNumber,
+      originalPageNumber: p.originalPageNumber,
+      modifiedPageNumber: p.modifiedPageNumber,
       hasChanges: p.hasChanges,
     })),
   }, null, 2);
@@ -593,11 +596,11 @@ export function generateJunitOutput(data: ReportData): string {
   
   const testcases = data.pageDiffs.map(page => {
     if (page.hasChanges) {
-      return `    <testcase name="Page ${page.pageNumber}" classname="pdf-diff">
-      <failure message="Page ${page.pageNumber} has differences">Changes detected on page ${page.pageNumber}</failure>
+      return `    <testcase name="${page.label}" classname="pdf-diff">
+      <failure message="${page.label} has differences">Changes detected in ${page.label}</failure>
     </testcase>`;
     }
-    return `    <testcase name="Page ${page.pageNumber}" classname="pdf-diff"/>`;
+    return `    <testcase name="${page.label}" classname="pdf-diff"/>`;
   }).join('\n');
   
   return `<?xml version="1.0" encoding="UTF-8"?>

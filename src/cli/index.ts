@@ -7,7 +7,7 @@ import open from 'open';
 import { input, confirm, select } from '@inquirer/prompts';
 
 import { extractTextFromPDFFile, parsePageSpec, type PDFDocument } from './pdfUtils.js';
-import { computeTextDiff, computeStats, combineStats, hasChanges, type PageDiff, type DiffStats } from './diffUtils.js';
+import { alignPages, computeTextDiff, computeStats, combineStats, formatPagePairLabel, hasChanges, type PageDiff, type DiffStats, type PagePair } from './diffUtils.js';
 import { 
   generateHtmlReport, 
   generateTextOutput, 
@@ -150,18 +150,29 @@ async function comparePdfs(
     process.exit(1);
   }
 
-  // Determine which pages to compare
+  // Explicit page selection preserves same-number pairing; full comparisons align inserted pages.
   const maxPages = Math.max(originalDoc.totalPages, modifiedDoc.totalPages);
-  let pagesToCompare: number[];
+  let pagePairs: PagePair[];
   
   if (options.pages) {
-    pagesToCompare = parsePageSpec(options.pages, maxPages);
+    const pagesToCompare = parsePageSpec(options.pages, maxPages);
     if (pagesToCompare.length === 0) {
       console.error(chalk.red('Error: No valid pages specified'));
       process.exit(1);
     }
+    pagePairs = pagesToCompare.map(pageNumber => {
+      const originalPage = originalDoc.pages[pageNumber - 1];
+      const modifiedPage = modifiedDoc.pages[pageNumber - 1];
+      return {
+        originalPageNumber: originalPage?.pageNumber ?? null,
+        modifiedPageNumber: modifiedPage?.pageNumber ?? null,
+        originalText: originalPage?.text ?? '',
+        modifiedText: modifiedPage?.text ?? '',
+        similarity: null,
+      };
+    });
   } else {
-    pagesToCompare = Array.from({ length: maxPages }, (_, i) => i + 1);
+    pagePairs = alignPages(originalDoc.pages, modifiedDoc.pages);
   }
 
   // Compute diffs
@@ -169,17 +180,18 @@ async function comparePdfs(
   const pageDiffs: PageDiff[] = [];
   const allStats: DiffStats[] = [];
 
-  for (const pageNum of pagesToCompare) {
-    const originalText = originalDoc.pages[pageNum - 1]?.text || '';
-    const modifiedText = modifiedDoc.pages[pageNum - 1]?.text || '';
-    const parts = computeTextDiff(originalText, modifiedText);
+  for (const [index, pair] of pagePairs.entries()) {
+    const parts = computeTextDiff(pair.originalText, pair.modifiedText);
     const pageStats = computeStats(parts);
+    const pageStructureChanged = pair.originalPageNumber === null || pair.modifiedPageNumber === null;
     allStats.push(pageStats);
     
     pageDiffs.push({
-      pageNumber: pageNum,
+      ...pair,
+      pageNumber: index + 1,
+      label: formatPagePairLabel(pair),
       parts,
-      hasChanges: hasChanges(parts),
+      hasChanges: pageStructureChanged || hasChanges(parts),
     });
   }
 

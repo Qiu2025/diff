@@ -3,9 +3,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { alignTextLines, computeStats, computeTextDiff, hasChanges } from '../src/utils/diffUtils.ts';
+import { alignPages, alignTextLines, computeStats, computeTextDiff, hasChanges } from '../src/utils/diffUtils.ts';
 import { extractTextFromPDFFile, parsePageSpec } from '../src/cli/pdfUtils.ts';
-import { generateHtmlReport, type ReportData } from '../src/cli/reportGenerator.ts';
+import { generateHtmlReport, generateJsonOutput, type ReportData } from '../src/cli/reportGenerator.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -64,6 +64,40 @@ test('line alignment keeps inserted and renumbered sections with their headings'
   assert.ok(rows.some(row => sideText(row.parts, 'original') === '8. Dispute Resolution' && sideText(row.parts, 'modified') === '9. Dispute Resolution'));
 });
 
+test('page alignment keeps later pages paired after insertions and removals', () => {
+  const original = [
+    { pageNumber: 1, text: 'Cover page for the agreement' },
+    { pageNumber: 2, text: 'Payment terms are due within thirty days' },
+    { pageNumber: 3, text: 'Appendix with contact details' },
+  ];
+  const modified = [
+    { pageNumber: 1, text: 'Cover page for the agreement' },
+    { pageNumber: 2, text: 'New executive summary and approval record' },
+    { pageNumber: 3, text: 'Payment terms are due within sixty days' },
+    { pageNumber: 4, text: 'Appendix with contact details' },
+  ];
+
+  assert.deepEqual(
+    alignPages(original, modified).map(pair => [pair.originalPageNumber, pair.modifiedPageNumber]),
+    [[1, 1], [null, 2], [2, 3], [3, 4]]
+  );
+
+  assert.deepEqual(
+    alignPages(modified, original).map(pair => [pair.originalPageNumber, pair.modifiedPageNumber]),
+    [[1, 1], [2, null], [3, 2], [4, 3]]
+  );
+});
+
+test('page alignment does not treat textless pages as equal', () => {
+  assert.deepEqual(
+    alignPages(
+      [{ pageNumber: 1, text: '' }],
+      [{ pageNumber: 1, text: '' }]
+    ).map(pair => [pair.originalPageNumber, pair.modifiedPageNumber]),
+    [[1, null], [null, 1]]
+  );
+});
+
 test('parsePageSpec returns sorted unique pages within the document', () => {
   assert.deepEqual(parsePageSpec('3, 1-3, 5, 99, invalid, 0-2', 5), [1, 2, 3, 5]);
 });
@@ -74,7 +108,17 @@ test('HTML reports escape filenames and extracted PDF text', () => {
   const data: ReportData = {
     originalDoc: { name: `original<&"'pdf`, pages: [{ pageNumber: 1, text: pdfText }], totalPages: 1 },
     modifiedDoc: { name: `modified<&"'pdf`, pages: [{ pageNumber: 1, text: 'safe' }], totalPages: 1 },
-    pageDiffs: [{ pageNumber: 1, parts: pageParts, hasChanges: false }],
+    pageDiffs: [{
+      pageNumber: 1,
+      originalPageNumber: 1,
+      modifiedPageNumber: 1,
+      originalText: pdfText,
+      modifiedText: 'safe',
+      similarity: 0,
+      label: 'Page 1',
+      parts: pageParts,
+      hasChanges: false,
+    }],
     overallStats: computeStats(pageParts),
     generatedAt: '2026-09-05',
   };
@@ -85,4 +129,13 @@ test('HTML reports escape filenames and extracted PDF text', () => {
   assert.ok(html.includes('modified&lt;&amp;&quot;&#039;pdf'));
   assert.ok(html.includes('&lt;script&gt;alert(&quot;pdf&quot;)&lt;/script&gt; &amp; &quot;quoted&quot; &#039;single&#039;'));
   assert.ok(!html.includes('<script>alert("pdf")</script>'));
+
+  const json = JSON.parse(generateJsonOutput(data));
+  assert.deepEqual(json.pages[0], {
+    pageNumber: 1,
+    comparisonNumber: 1,
+    originalPageNumber: 1,
+    modifiedPageNumber: 1,
+    hasChanges: false,
+  });
 });

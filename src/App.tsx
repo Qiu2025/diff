@@ -13,16 +13,15 @@ import {
 import type { ViewMode, Theme } from './components';
 import { extractTextFromPDF } from './utils/pdfUtils';
 import type { PDFDocument } from './utils/pdfUtils';
-import { computeTextDiff, computeStats } from './utils/diffUtils';
-import type { DiffPart, DiffStats } from './utils/diffUtils';
+import { alignPages, combineStats, computeTextDiff, computeStats, formatPagePairLabel } from './utils/diffUtils';
+import type { DiffPart, DiffStats, PagePair } from './utils/diffUtils';
 import { exportDiffToPDF } from './utils/exportUtils';
 import './App.css';
 
-interface PageDiffResult {
-  pageNumber: number;
+interface PageDiffResult extends PagePair {
+  comparisonNumber: number;
+  label: string;
   parts: DiffPart[];
-  originalText: string;
-  modifiedText: string;
   stats: DiffStats;
 }
 
@@ -122,74 +121,61 @@ function App() {
     }
   }, []);
 
-  const { diffParts, stats, totalPages, allPagesDiffs } = useMemo(() => {
+  const pagePairs = useMemo(
+    () => originalDoc && modifiedDoc ? alignPages(originalDoc.pages, modifiedDoc.pages) : [],
+    [originalDoc, modifiedDoc]
+  );
+
+  const { diffParts, stats, totalPages, allPagesDiffs, currentPair } = useMemo(() => {
     if (!originalDoc || !modifiedDoc) {
-      return { diffParts: null, stats: null, totalPages: 0, allPagesDiffs: null };
+      return { diffParts: null, stats: null, totalPages: 0, allPagesDiffs: null, currentPair: null };
     }
 
-    const maxPages = Math.max(originalDoc.totalPages, modifiedDoc.totalPages);
-    
     if (showAllPages) {
       // Compute diffs for all pages
       const allDiffs: PageDiffResult[] = [];
       const allStats: DiffStats[] = [];
       
-      for (let i = 0; i < maxPages; i++) {
-        const originalText = originalDoc.pages[i]?.text || '';
-        const modifiedText = modifiedDoc.pages[i]?.text || '';
-        const parts = computeTextDiff(originalText, modifiedText);
+      for (let i = 0; i < pagePairs.length; i++) {
+        const pair = pagePairs[i];
+        const parts = computeTextDiff(pair.originalText, pair.modifiedText);
         const pageStats = computeStats(parts);
         
         allDiffs.push({
-          pageNumber: i + 1,
+          ...pair,
+          comparisonNumber: i + 1,
+          label: formatPagePairLabel(pair),
           parts,
-          originalText,
-          modifiedText,
           stats: pageStats
         });
         allStats.push(pageStats);
       }
       
-      // Combine stats from all pages
-      const combined = allStats.reduce((acc, s) => ({
-        additions: acc.additions + s.additions,
-        deletions: acc.deletions + s.deletions,
-        unchanged: acc.unchanged + s.unchanged,
-        totalChanges: acc.totalChanges + s.totalChanges,
-        changePercentage: 0
-      }), {
-        additions: 0,
-        deletions: 0,
-        unchanged: 0,
-        totalChanges: 0,
-        changePercentage: 0
-      });
-      
-      const totalWords = combined.additions + combined.deletions + combined.unchanged;
-      combined.changePercentage = totalWords > 0 ? (combined.totalChanges / totalWords) * 100 : 0;
-      
       return {
         diffParts: null,
-        stats: combined,
-        totalPages: maxPages,
-        allPagesDiffs: allDiffs
+        stats: combineStats(allStats),
+        totalPages: pagePairs.length,
+        allPagesDiffs: allDiffs,
+        currentPair: null,
       };
     } else {
-      // Single page mode
-      const pageIndex = currentPage - 1;
-      const originalText = originalDoc.pages[pageIndex]?.text || '';
-      const modifiedText = modifiedDoc.pages[pageIndex]?.text || '';
-      const parts = computeTextDiff(originalText, modifiedText);
+      const pair = pagePairs[currentPage - 1] ?? pagePairs[0];
+      const parts = computeTextDiff(pair?.originalText ?? '', pair?.modifiedText ?? '');
       const diffStats = computeStats(parts);
 
       return {
         diffParts: parts,
         stats: diffStats,
-        totalPages: maxPages,
-        allPagesDiffs: null as PageDiffResult[] | null
+        totalPages: pagePairs.length,
+        allPagesDiffs: null as PageDiffResult[] | null,
+        currentPair: pair ?? null,
       };
     }
-  }, [originalDoc, modifiedDoc, currentPage, showAllPages]);
+  }, [originalDoc, modifiedDoc, pagePairs, currentPage, showAllPages]);
+
+  useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleExport = useCallback(() => {
     if (!originalDoc || !modifiedDoc) return;
@@ -302,6 +288,7 @@ function App() {
                 <PageSelector
                   currentPage={currentPage}
                   totalPages={totalPages}
+                  pageLabel={currentPair ? formatPagePairLabel(currentPair) : undefined}
                   onPageChange={setCurrentPage}
                   disabled={showAllPages}
                 />
@@ -319,10 +306,10 @@ function App() {
             {showAllPages ? (
               allPagesDiffs ? (
                 <div className="all-pages-view">
-                  {allPagesDiffs.map(({ pageNumber, parts, originalText, modifiedText, stats: pageStats }) => (
-                    <section key={pageNumber} className="page-section" aria-labelledby={`page-${pageNumber}-title`}>
+                  {allPagesDiffs.map(({ comparisonNumber, label, parts, originalText, modifiedText, stats: pageStats }) => (
+                    <section key={comparisonNumber} className="page-section" aria-labelledby={`page-${comparisonNumber}-title`}>
                       <div className="page-section-header">
-                        <h3 id={`page-${pageNumber}-title`}>Page {pageNumber}</h3>
+                        <h3 id={`page-${comparisonNumber}-title`}>{label}</h3>
                         <div className="page-stats" aria-label={`${pageStats.additions} additions and ${pageStats.deletions} removals`}>
                           <span className="stat-badge additions">+{pageStats.additions}</span>
                           <span className="stat-badge deletions">−{pageStats.deletions}</span>
@@ -343,8 +330,8 @@ function App() {
                 <DiffView
                   parts={diffParts}
                   mode={viewMode}
-                  originalText={originalDoc?.pages[currentPage - 1]?.text || ''}
-                  modifiedText={modifiedDoc?.pages[currentPage - 1]?.text || ''}
+                  originalText={currentPair?.originalText ?? ''}
+                  modifiedText={currentPair?.modifiedText ?? ''}
                 />
               )
             )}

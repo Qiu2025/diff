@@ -3,11 +3,12 @@ import './PageSelector.css';
 interface PageSelectorProps {
   currentPage: number;
   totalPages: number;
+  pageLabel?: string;
   onPageChange: (page: number) => void;
   disabled?: boolean;
 }
 
-export function PageSelector({ currentPage, totalPages, onPageChange, disabled }: PageSelectorProps) {
+export function PageSelector({ currentPage, totalPages, pageLabel, onPageChange, disabled }: PageSelectorProps) {
   return (
     <div className="page-selector">
       <button
@@ -21,7 +22,8 @@ export function PageSelector({ currentPage, totalPages, onPageChange, disabled }
         </svg>
       </button>
       <span className="page-info">
-        Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
+        <strong>{pageLabel ?? `Page ${currentPage}`}</strong>
+        <span>{currentPage} of {totalPages}</span>
       </span>
       <button
         className="page-btn"

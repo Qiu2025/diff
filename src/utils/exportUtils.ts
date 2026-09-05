@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import type { DiffPart } from './diffUtils';
 import type { PDFDocument } from './pdfUtils';
-import { computeTextDiff, computeStats, combineStats } from './diffUtils';
+import { alignPages, combineStats, computeStats, computeTextDiff, formatPagePairLabel } from './diffUtils';
 import type { DiffStats } from './diffUtils';
 
 export function exportDiffToPDF(
@@ -31,17 +31,15 @@ export function exportDiffToPDF(
   };
 
   // Compute stats for all pages
-  const maxPages = Math.max(originalDoc.totalPages, modifiedDoc.totalPages);
+  const pagePairs = alignPages(originalDoc.pages, modifiedDoc.pages);
   const allStats: DiffStats[] = [];
-  const allDiffs: Array<{ page: number; parts: DiffPart[] }> = [];
+  const allDiffs: Array<{ label: string; parts: DiffPart[] }> = [];
 
-  for (let i = 0; i < maxPages; i++) {
-    const originalText = originalDoc.pages[i]?.text || '';
-    const modifiedText = modifiedDoc.pages[i]?.text || '';
-    const parts = computeTextDiff(originalText, modifiedText);
+  for (const pair of pagePairs) {
+    const parts = computeTextDiff(pair.originalText, pair.modifiedText);
     const pageStats = computeStats(parts);
     allStats.push(pageStats);
-    allDiffs.push({ page: i + 1, parts });
+    allDiffs.push({ label: formatPagePairLabel(pair), parts });
   }
 
   const combinedStats = combineStats(allStats);
@@ -57,7 +55,7 @@ export function exportDiffToPDF(
   doc.setTextColor(100, 100, 100);
   doc.text(`Generated on: ${new Date().toLocaleString()}`, margin, yPosition);
   yPosition += 6;
-  doc.text(`Total Pages: ${maxPages}`, margin, yPosition);
+  doc.text(`Page comparisons: ${pagePairs.length}`, margin, yPosition);
   yPosition += 10;
 
   // File names
@@ -116,11 +114,11 @@ export function exportDiffToPDF(
   // Diff content for all pages
   doc.setFontSize(14);
   
-  for (const { page, parts } of allDiffs) {
+  for (const { label, parts } of allDiffs) {
     checkPageBreak(20);
     
     doc.setTextColor(50, 50, 50);
-    doc.text(`Page ${page}`, margin, yPosition);
+    doc.text(label, margin, yPosition);
     yPosition += 8;
 
     doc.setFontSize(9);
