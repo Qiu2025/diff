@@ -1,4 +1,4 @@
-import { diffWords, diffLines } from 'diff';
+import { diffWords, diffWordsWithSpace, diffLines } from 'diff';
 
 export interface DiffPart {
   value: string;
@@ -145,7 +145,11 @@ function alignSequences<T>(
   return pairs.reverse();
 }
 
-export function alignTextLines(oldText: string, newText: string): AlignedDiffRow[] {
+function alignTextLinesUsing(
+  oldText: string,
+  newText: string,
+  diffLine: (oldLine: string, newLine: string) => DiffPart[]
+): AlignedDiffRow[] {
   const oldLines = (oldText ? oldText.split('\n') : []).map(line => ({
     line,
     fingerprint: createFingerprint(line, normalizeLine),
@@ -158,17 +162,25 @@ export function alignTextLines(oldText: string, newText: string): AlignedDiffRow
   return alignSequences(
     oldLines,
     newLines,
-    (left, right) => fingerprintSimilarity(left.fingerprint, right.fingerprint),
+    (left, right) => (
+      !left.fingerprint.normalized && !right.fingerprint.normalized
+        ? 1
+        : fingerprintSimilarity(left.fingerprint, right.fingerprint)
+    ),
     MIN_LINE_SIMILARITY
   ).map(({ original, modified }) => {
     if (original && modified) {
-      return { parts: diffWords(original.line, modified.line) };
+      return { parts: diffLine(original.line, modified.line) };
     }
     if (original) {
       return { parts: [{ value: original.line, removed: true }] };
     }
     return { parts: [{ value: modified?.line ?? '', added: true }] };
   });
+}
+
+export function alignTextLines(oldText: string, newText: string): AlignedDiffRow[] {
+  return alignTextLinesUsing(oldText, newText, diffWordsWithSpace);
 }
 
 export function alignPages(originalPages: TextPage[], modifiedPages: TextPage[]): PagePair[] {
@@ -210,7 +222,7 @@ export function formatPagePairLabel(pair: Pick<PagePair, 'originalPageNumber' | 
 }
 
 export function computeTextDiff(oldText: string, newText: string): DiffPart[] {
-  const rows = alignTextLines(oldText, newText);
+  const rows = alignTextLinesUsing(oldText, newText, diffWords);
 
   return rows.flatMap((row, index) => (
     index === rows.length - 1 ? row.parts : [...row.parts, { value: '\n' }]

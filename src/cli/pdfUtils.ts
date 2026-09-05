@@ -1,5 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { buildPDFPage } from '../utils/pdfModel.ts';
+export type { PDFDocument, PDFPage } from '../utils/pdfModel.ts';
+import type { PDFDocument, PDFPage } from '../utils/pdfModel.ts';
 
 // Dynamic import for pdfjs-dist (use legacy build for Node.js compatibility)
 let pdfjsLib: typeof import('pdfjs-dist/legacy/build/pdf.mjs') | null = null;
@@ -9,17 +12,6 @@ async function getPdfjs() {
     pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
   }
   return pdfjsLib;
-}
-
-export interface PDFPage {
-  pageNumber: number;
-  text: string;
-}
-
-export interface PDFDocument {
-  name: string;
-  pages: PDFPage[];
-  totalPages: number;
 }
 
 export async function extractTextFromPDFFile(filePath: string): Promise<PDFDocument> {
@@ -33,37 +25,36 @@ export async function extractTextFromPDFFile(filePath: string): Promise<PDFDocum
   const data = new Uint8Array(fs.readFileSync(absolutePath));
   
   // Configure PDF.js for Node.js text extraction
-  const pdf = await pdfjs.getDocument({
+  const loadingTask = pdfjs.getDocument({
     data,
     useSystemFonts: true,
     disableFontFace: true,
-  }).promise;
-  
+  });
+  let pdf: Awaited<typeof loadingTask.promise>;
+
+  try {
+    pdf = await loadingTask.promise;
+  } catch (error) {
+    await loadingTask.destroy();
+    throw error;
+  }
   const pages: PDFPage[] = [];
 
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    
-    // Preserve line breaks by checking Y positions
-    let lastY = -1;
-    const text = textContent.items
-      .map((item, index) => {
-        if (!('str' in item)) return '';
-        
-        const currentY = item.transform[5];
-        const needsNewline = lastY !== -1 && Math.abs(currentY - lastY) > 5;
-        lastY = currentY;
-        
-        const nextItem = textContent.items[index + 1];
-        const needsSpace = nextItem && 'str' in nextItem && 
-          nextItem.transform[4] - (item.transform[4] + item.width) > 2;
-        
-        return (needsNewline ? '\n' : '') + item.str + (needsSpace ? ' ' : '');
-      })
-      .join('');
-    
-    pages.push({ pageNumber: i, text });
+  try {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+
+      try {
+        const textContent = await page.getTextContent();
+        const viewport = page.getViewport({ scale: 1 });
+        const textItems = textContent.items.filter(item => 'str' in item);
+        pages.push(buildPDFPage(i, viewport, textItems));
+      } finally {
+        page.cleanup();
+      }
+    }
+  } finally {
+    await pdf.destroy();
   }
 
   return {

@@ -3,11 +3,31 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { alignPages, alignTextLines, computeStats, computeTextDiff, hasChanges } from '../src/utils/diffUtils.ts';
+import { alignPages, alignTextLines, computeStats, computeTextDiff, hasChanges, type DiffPart } from '../src/utils/diffUtils.ts';
 import { extractTextFromPDFFile, parsePageSpec } from '../src/cli/pdfUtils.ts';
 import { generateHtmlReport, generateJsonOutput, type ReportData } from '../src/cli/reportGenerator.ts';
+import { buildPDFPage, type PDFPage } from '../src/utils/pdfModel.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function textPage(pageNumber: number, text: string): PDFPage {
+  return buildPDFPage(pageNumber, { width: 612, height: 792, rotation: 0 }, [{
+    str: text,
+    dir: 'ltr',
+    transform: [1, 0, 0, 1, 20, 700],
+    width: text.length * 5,
+    height: 12,
+    fontName: 'TestFont',
+    hasEOL: false,
+  }]);
+}
+
+function sideText(parts: DiffPart[], side: 'original' | 'modified'): string {
+  return parts
+    .filter(part => side === 'original' ? !part.added : !part.removed)
+    .map(part => part.value)
+    .join('');
+}
 
 test('demo PDFs have two pages and expected extracted text', async () => {
   const original = await extractTextFromPDFFile(path.join(repoRoot, 'public/demo-original.pdf'));
@@ -21,6 +41,29 @@ test('demo PDFs have two pages and expected extracted text', async () => {
   assert.match(modified.pages[1]?.text ?? '', /We collect minimal usage data to improve the software\./);
   assert.match(modified.pages[1]?.text ?? '', /Last updated: March 1, 2025/);
   assert.doesNotMatch(modified.pages[1]?.text ?? '', /You may not reverse engineer/);
+  assert.equal(original.pages[0]?.extraction.status, 'ok');
+  assert.ok((original.pages[0]?.textRuns.length ?? 0) > 0);
+  assert.ok((original.pages[0]?.width ?? 0) > 0);
+});
+
+test('PDF page model preserves text geometry, ranges, and explicit line endings', () => {
+  const page = buildPDFPage(3, { width: 600, height: 800, rotation: 90 }, [
+    { str: 'Hello', dir: 'ltr', transform: [1, 0, 0, 1, 10, 700], width: 25, height: 10, fontName: 'A', hasEOL: false },
+    { str: 'world', dir: 'ltr', transform: [1, 0, 0, 1, 40, 700], width: 25, height: 10, fontName: 'A', hasEOL: true },
+    { str: 'Next', dir: 'ltr', transform: [1, 0, 0, 1, 10, 680], width: 20, height: 10, fontName: 'B', hasEOL: false },
+  ]);
+
+  assert.equal(page.text, 'Hello world\nNext');
+  assert.deepEqual(
+    page.textRuns.map(run => [run.text, run.textStart, run.textEnd]),
+    [['Hello', 0, 5], ['world', 6, 11], ['Next', 12, 16]]
+  );
+  assert.deepEqual([page.width, page.height, page.rotation], [600, 800, 90]);
+  assert.equal(page.extraction.status, 'ok');
+  assert.equal(
+    buildPDFPage(4, { width: 600, height: 800, rotation: 0 }, []).extraction.status,
+    'empty'
+  );
 });
 
 test('diffUtils detects same, added, deleted, and replaced text and computes stats', () => {
@@ -54,14 +97,22 @@ test('line alignment keeps inserted and renumbered sections with their headings'
     '9. Dispute Resolution',
   ].join('\n');
   const rows = alignTextLines(original, modified);
-  const sideText = (parts: typeof rows[number]['parts'], side: 'original' | 'modified') => parts
-    .filter(part => side === 'original' ? !part.added : !part.removed)
-    .map(part => part.value)
-    .join('');
 
   assert.ok(rows.some(row => sideText(row.parts, 'original') === '' && sideText(row.parts, 'modified') === '7. Privacy'));
   assert.ok(rows.some(row => sideText(row.parts, 'original') === '7. Liability Limitation' && sideText(row.parts, 'modified') === '8. Liability Limitation'));
   assert.ok(rows.some(row => sideText(row.parts, 'original') === '8. Dispute Resolution' && sideText(row.parts, 'modified') === '9. Dispute Resolution'));
+});
+
+test('side-by-side alignment preserves shared blank lines and boundary spaces', () => {
+  const originalLine = 'The licensor grants a non-exclusive license for personal purposes only.';
+  const modifiedLine = 'The licensor grants a non-exclusive, worldwide license for both personal and commercial purposes.';
+  const rows = alignTextLines(`Agreement\n\n${originalLine}`, `Agreement\n\n${modifiedLine}`);
+
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[1]?.parts, []);
+  assert.equal(sideText(rows[2]?.parts ?? [], 'original'), originalLine);
+  assert.equal(sideText(rows[2]?.parts ?? [], 'modified'), modifiedLine);
+  assert.equal(hasChanges(computeTextDiff('Agreement\n\nTerms', 'Agreement\n\nTerms')), false);
 });
 
 test('page alignment keeps later pages paired after insertions and removals', () => {
@@ -106,8 +157,8 @@ test('HTML reports escape filenames and extracted PDF text', () => {
   const pdfText = `<script>alert("pdf")</script> & "quoted" 'single'`;
   const pageParts = [{ value: pdfText }];
   const data: ReportData = {
-    originalDoc: { name: `original<&"'pdf`, pages: [{ pageNumber: 1, text: pdfText }], totalPages: 1 },
-    modifiedDoc: { name: `modified<&"'pdf`, pages: [{ pageNumber: 1, text: 'safe' }], totalPages: 1 },
+    originalDoc: { name: `original<&"'pdf`, pages: [textPage(1, pdfText)], totalPages: 1 },
+    modifiedDoc: { name: `modified<&"'pdf`, pages: [textPage(1, 'safe')], totalPages: 1 },
     pageDiffs: [{
       pageNumber: 1,
       originalPageNumber: 1,

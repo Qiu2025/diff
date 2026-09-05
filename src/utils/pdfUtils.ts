@@ -1,4 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
+import { buildPDFPage } from './pdfModel';
+export type { PDFDocument, PDFPage } from './pdfModel';
+import type { PDFDocument, PDFPage } from './pdfModel';
 
 // Set up the worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -6,45 +9,34 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-export interface PDFPage {
-  pageNumber: number;
-  text: string;
-}
-
-export interface PDFDocument {
-  name: string;
-  pages: PDFPage[];
-  totalPages: number;
-}
-
 export async function extractTextFromPDF(file: File): Promise<PDFDocument> {
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  let pdf: Awaited<typeof loadingTask.promise>;
+
+  try {
+    pdf = await loadingTask.promise;
+  } catch (error) {
+    await loadingTask.destroy();
+    throw error;
+  }
   const pages: PDFPage[] = [];
 
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    
-    // Preserve line breaks by checking Y positions
-    let lastY = -1;
-    const text = textContent.items
-      .map((item, index) => {
-        if (!('str' in item)) return '';
-        
-        const currentY = item.transform[5];
-        const needsNewline = lastY !== -1 && Math.abs(currentY - lastY) > 5;
-        lastY = currentY;
-        
-        const nextItem = textContent.items[index + 1];
-        const needsSpace = nextItem && 'str' in nextItem && 
-          nextItem.transform[4] - (item.transform[4] + item.width) > 2;
-        
-        return (needsNewline ? '\n' : '') + item.str + (needsSpace ? ' ' : '');
-      })
-      .join('');
-    
-    pages.push({ pageNumber: i, text });
+  try {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+
+      try {
+        const textContent = await page.getTextContent();
+        const viewport = page.getViewport({ scale: 1 });
+        const textItems = textContent.items.filter(item => 'str' in item);
+        pages.push(buildPDFPage(i, viewport, textItems));
+      } finally {
+        page.cleanup();
+      }
+    }
+  } finally {
+    await pdf.destroy();
   }
 
   return {
@@ -61,18 +53,35 @@ export async function renderPageToCanvas(
   scale: number = 1.5
 ): Promise<void> {
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const page = await pdf.getPage(pageNumber);
-  
-  const viewport = page.getViewport({ scale });
-  canvas.height = viewport.height;
-  canvas.width = viewport.width;
-  
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Could not get canvas context');
-  
-  await page.render({
-    canvasContext: context,
-    viewport,
-  }).promise;
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  let pdf: Awaited<typeof loadingTask.promise>;
+
+  try {
+    pdf = await loadingTask.promise;
+  } catch (error) {
+    await loadingTask.destroy();
+    throw error;
+  }
+
+  try {
+    const page = await pdf.getPage(pageNumber);
+
+    try {
+      const viewport = page.getViewport({ scale });
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Could not get canvas context');
+
+      await page.render({
+        canvasContext: context,
+        viewport,
+      }).promise;
+    } finally {
+      page.cleanup();
+    }
+  } finally {
+    await pdf.destroy();
+  }
 }
