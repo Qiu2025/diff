@@ -3,10 +3,10 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { alignPages, alignTextLines, computeStats, computeTextDiff, hasChanges, type DiffPart } from '../src/utils/diffUtils.ts';
+import { alignPages, alignTextLines, compareDocuments, computeStats, computeTextDiff, hasChanges, type DiffPart } from '../src/utils/diffUtils.ts';
 import { extractTextFromPDFFile, parsePageSpec } from '../src/cli/pdfUtils.ts';
-import { generateHtmlReport, generateJsonOutput, type ReportData } from '../src/cli/reportGenerator.ts';
-import { buildPDFPage, type PDFPage } from '../src/utils/pdfModel.ts';
+import { generateHtmlReport, generateJsonOutput, generateJunitOutput, type ReportData } from '../src/cli/reportGenerator.ts';
+import { buildPDFPage, type PDFDocument, type PDFPage } from '../src/utils/pdfModel.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -20,6 +20,10 @@ function textPage(pageNumber: number, text: string): PDFPage {
     fontName: 'TestFont',
     hasEOL: false,
   }]);
+}
+
+function pdfDocument(name: string, pages: PDFPage[]): PDFDocument {
+  return { name, pages, totalPages: pages.length };
 }
 
 function sideText(parts: DiffPart[], side: 'original' | 'modified'): string {
@@ -139,14 +143,34 @@ test('page alignment keeps later pages paired after insertions and removals', ()
   );
 });
 
-test('page alignment does not treat textless pages as equal', () => {
+test('textless pages stay paired but comparison remains indeterminate', () => {
+  const original = pdfDocument('original.pdf', [textPage(1, '')]);
+  const modified = pdfDocument('modified.pdf', [textPage(1, '')]);
+  const pairs = alignPages(original.pages, modified.pages);
+  const result = compareDocuments(original, modified, pairs);
+
   assert.deepEqual(
-    alignPages(
-      [{ pageNumber: 1, text: '' }],
-      [{ pageNumber: 1, text: '' }]
-    ).map(pair => [pair.originalPageNumber, pair.modifiedPageNumber]),
-    [[1, null], [null, 1]]
+    pairs.map(pair => [pair.originalPageNumber, pair.modifiedPageNumber, pair.similarity]),
+    [[1, 1, null]]
   );
+  assert.equal(result.status, 'indeterminate');
+  assert.equal(result.pageDiffs[0]?.status, 'indeterminate');
+  assert.equal(result.pageDiffs[0]?.hasChanges, false);
+  assert.equal(result.diagnostics[0]?.code, 'no-extractable-text');
+  assert.equal(result.diagnostics[0]?.side, 'both');
+});
+
+test('comparison result is versioned and reports equal and different states', () => {
+  const original = pdfDocument('original.pdf', [textPage(1, 'same text')]);
+  const equal = compareDocuments(original, pdfDocument('copy.pdf', [textPage(1, 'same text')]));
+  const different = compareDocuments(original, pdfDocument('modified.pdf', [textPage(1, 'changed text')]));
+
+  assert.equal(equal.schemaVersion, 1);
+  assert.equal(equal.engineVersion, 'text-v1');
+  assert.equal(equal.status, 'equal');
+  assert.equal(equal.pageDiffs[0]?.status, 'equal');
+  assert.equal(different.status, 'different');
+  assert.equal(different.pageDiffs[0]?.status, 'different');
 });
 
 test('parsePageSpec returns sorted unique pages within the document', () => {
@@ -155,22 +179,19 @@ test('parsePageSpec returns sorted unique pages within the document', () => {
 
 test('HTML reports escape filenames and extracted PDF text', () => {
   const pdfText = `<script>alert("pdf")</script> & "quoted" 'single'`;
-  const pageParts = [{ value: pdfText }];
-  const data: ReportData = {
-    originalDoc: { name: `original<&"'pdf`, pages: [textPage(1, pdfText)], totalPages: 1 },
-    modifiedDoc: { name: `modified<&"'pdf`, pages: [textPage(1, 'safe')], totalPages: 1 },
-    pageDiffs: [{
-      pageNumber: 1,
+  const result = compareDocuments(
+    pdfDocument(`original<&"'pdf`, [textPage(1, pdfText)]),
+    pdfDocument(`modified<&"'pdf`, [textPage(1, 'safe')]),
+    [{
       originalPageNumber: 1,
       modifiedPageNumber: 1,
       originalText: pdfText,
       modifiedText: 'safe',
       similarity: 0,
-      label: 'Page 1',
-      parts: pageParts,
-      hasChanges: false,
-    }],
-    overallStats: computeStats(pageParts),
+    }]
+  );
+  const data: ReportData = {
+    result,
     generatedAt: '2026-09-05',
   };
 
@@ -182,11 +203,37 @@ test('HTML reports escape filenames and extracted PDF text', () => {
   assert.ok(!html.includes('<script>alert("pdf")</script>'));
 
   const json = JSON.parse(generateJsonOutput(data));
+  assert.equal(json.schemaVersion, 1);
+  assert.equal(json.engineVersion, 'text-v1');
+  assert.equal(json.status, 'different');
+  assert.deepEqual(json.diagnostics, []);
   assert.deepEqual(json.pages[0], {
     pageNumber: 1,
     comparisonNumber: 1,
     originalPageNumber: 1,
     modifiedPageNumber: 1,
-    hasChanges: false,
+    status: 'different',
+    hasChanges: true,
   });
+});
+
+test('JUnit reports indeterminate text comparisons as errors', () => {
+  const data: ReportData = {
+    result: compareDocuments(
+      pdfDocument('original.pdf', [textPage(1, '')]),
+      pdfDocument('modified.pdf', [textPage(1, '')])
+    ),
+    generatedAt: '2026-09-05',
+  };
+
+  const html = generateHtmlReport(data);
+  const json = JSON.parse(generateJsonOutput(data));
+  const junit = generateJunitOutput(data);
+
+  assert.match(html, /Text unavailable/);
+  assert.match(html, /Visual comparison or OCR is required/);
+  assert.equal(json.status, 'indeterminate');
+  assert.equal(json.pages[0]?.status, 'indeterminate');
+  assert.match(junit, /failures="0" errors="1"/);
+  assert.match(junit, /<error message="Page 1 could not be verified">/);
 });

@@ -310,6 +310,25 @@ button:disabled {
   gap: 1rem;
 }
 
+.comparison-warning {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--warning-color);
+  background: var(--surface-muted);
+  color: var(--warning-color);
+  font-size: 0.8125rem;
+}
+
+.comparison-warning strong {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .page-controls {
   display: flex;
   align-items: center;
@@ -387,6 +406,10 @@ button:disabled {
 
 .stat-badge.deletions {
   color: var(--danger-color);
+}
+
+.stat-badge.indeterminate {
+  color: var(--warning-color);
 }
 
 .page-section > .diff-view {
@@ -473,6 +496,11 @@ button:disabled {
 
   .comparison-actions {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .comparison-warning {
+    align-items: flex-start;
     flex-direction: column;
   }
 }

@@ -1,5 +1,4 @@
-import type { DiffPart, DiffStats, PageDiff } from './diffUtils.js';
-import type { PDFDocument } from './pdfUtils.js';
+import type { ComparisonResult, DiffPart } from './diffUtils.js';
 
 function escapeHtml(text: string): string {
   return text
@@ -12,16 +11,15 @@ function escapeHtml(text: string): string {
 }
 
 export interface ReportData {
-  originalDoc: PDFDocument;
-  modifiedDoc: PDFDocument;
-  pageDiffs: PageDiff[];
-  overallStats: DiffStats;
+  result: ComparisonResult;
   generatedAt: string;
 }
 
 export function generateHtmlReport(data: ReportData): string {
-  const { originalDoc, modifiedDoc, pageDiffs, overallStats, generatedAt } = data;
-  const changedPages = pageDiffs.filter(p => p.hasChanges);
+  const { result, generatedAt } = data;
+  const { documents, pageDiffs, overallStats, diagnostics } = result;
+  const changedPages = pageDiffs.filter(page => page.status === 'different');
+  const indeterminatePages = pageDiffs.filter(page => page.status === 'indeterminate');
   
   return `<!DOCTYPE html>
 <html lang="en">
@@ -45,6 +43,8 @@ export function generateHtmlReport(data: ReportData): string {
       --added-soft: #dcebdd;
       --removed: #8b3028;
       --removed-soft: #f1deda;
+      --warning: #8a5a10;
+      --warning-soft: #f4ead4;
       color-scheme: light;
       font-synthesis: none;
       text-rendering: optimizeLegibility;
@@ -214,6 +214,15 @@ export function generateHtmlReport(data: ReportData): string {
       text-transform: uppercase;
     }
 
+    .comparison-warning {
+      margin-top: 20px;
+      padding: 12px 14px;
+      border: 1px solid var(--warning);
+      background: var(--warning-soft);
+      color: var(--warning);
+      font-size: 13px;
+    }
+
     .page-index {
       padding: 26px 40px 30px;
       border-bottom: 1px solid var(--rule-strong);
@@ -274,6 +283,12 @@ export function generateHtmlReport(data: ReportData): string {
       color: var(--muted);
     }
 
+    .page-chip.indeterminate {
+      border-color: var(--warning);
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+
     .diff-content {
       padding: 40px;
     }
@@ -323,6 +338,10 @@ export function generateHtmlReport(data: ReportData): string {
 
     .page-header .badge.unchanged {
       color: var(--added);
+    }
+
+    .page-header .badge.indeterminate {
+      color: var(--warning);
     }
 
     .diff-text {
@@ -458,13 +477,13 @@ export function generateHtmlReport(data: ReportData): string {
       <div class="files">
         <div class="file-card">
           <h3>Original File</h3>
-          <div class="filename">${escapeHtml(originalDoc.name)}</div>
-          <div class="pages">${originalDoc.totalPages} page${originalDoc.totalPages !== 1 ? 's' : ''}</div>
+          <div class="filename">${escapeHtml(documents.original.name)}</div>
+          <div class="pages">${documents.original.totalPages} page${documents.original.totalPages !== 1 ? 's' : ''}</div>
         </div>
         <div class="file-card">
           <h3>Modified File</h3>
-          <div class="filename">${escapeHtml(modifiedDoc.name)}</div>
-          <div class="pages">${modifiedDoc.totalPages} page${modifiedDoc.totalPages !== 1 ? 's' : ''}</div>
+          <div class="filename">${escapeHtml(documents.modified.name)}</div>
+          <div class="pages">${documents.modified.totalPages} page${documents.modified.totalPages !== 1 ? 's' : ''}</div>
         </div>
       </div>
       
@@ -486,14 +505,19 @@ export function generateHtmlReport(data: ReportData): string {
           <div class="label">Changed</div>
         </div>
       </div>
+      ${diagnostics.length > 0 ? `
+        <div class="comparison-warning" role="status">
+          ${diagnostics.length} page comparison${diagnostics.length === 1 ? '' : 's'} contain no extractable text. Visual comparison or OCR is required to verify them.
+        </div>
+      ` : ''}
     </section>
     
     <section class="page-index">
-      <h2>Page Overview (${changedPages.length} of ${pageDiffs.length} comparisons changed)</h2>
+      <h2>Page Overview (${changedPages.length} changed, ${indeterminatePages.length} unverified)</h2>
       <div class="page-chips">
         ${pageDiffs.map(p => `
-          <a href="#page-${p.pageNumber}" class="page-chip ${p.hasChanges ? 'changed' : 'unchanged'}">
-            ${p.label}${p.hasChanges ? ' ✎' : ''}
+          <a href="#page-${p.pageNumber}" class="page-chip ${p.status === 'equal' ? 'unchanged' : p.status === 'different' ? 'changed' : 'indeterminate'}">
+            ${p.label}${p.status === 'different' ? ' ✎' : p.status === 'indeterminate' ? ' ?' : ''}
           </a>
         `).join('')}
       </div>
@@ -504,11 +528,13 @@ export function generateHtmlReport(data: ReportData): string {
         <div id="page-${pageDiff.pageNumber}" class="page-diff">
           <div class="page-header">
             <h3>${pageDiff.label}</h3>
-            <span class="badge ${pageDiff.hasChanges ? 'changed' : 'unchanged'}">
-              ${pageDiff.hasChanges ? 'Changed' : 'Unchanged'}
+            <span class="badge ${pageDiff.status === 'equal' ? 'unchanged' : pageDiff.status === 'different' ? 'changed' : 'indeterminate'}">
+              ${pageDiff.status === 'different' ? 'Changed' : pageDiff.status === 'indeterminate' ? 'Text unavailable' : 'Unchanged'}
             </span>
           </div>
-          <div class="diff-text">${renderDiffParts(pageDiff.parts)}</div>
+          <div class="diff-text">${pageDiff.status === 'indeterminate'
+            ? 'Text comparison unavailable: no extractable text.'
+            : renderDiffParts(pageDiff.parts)}</div>
         </div>
       `).join('')}
     </section>
@@ -534,15 +560,16 @@ function renderDiffParts(parts: DiffPart[]): string {
 }
 
 export function generateTextOutput(data: ReportData): string {
-  const { originalDoc, modifiedDoc, pageDiffs, overallStats } = data;
+  const { documents, pageDiffs, overallStats, status } = data.result;
   const lines: string[] = [];
   
   lines.push('═'.repeat(60));
   lines.push('                    PDF DIFF REPORT');
   lines.push('═'.repeat(60));
   lines.push('');
-  lines.push(`Original: ${originalDoc.name} (${originalDoc.totalPages} pages)`);
-  lines.push(`Modified: ${modifiedDoc.name} (${modifiedDoc.totalPages} pages)`);
+  lines.push(`Original: ${documents.original.name} (${documents.original.totalPages} pages)`);
+  lines.push(`Modified: ${documents.modified.name} (${documents.modified.totalPages} pages)`);
+  lines.push(`Result:   ${status.toUpperCase()}`);
   lines.push('');
   lines.push('─'.repeat(60));
   lines.push('                     STATISTICS');
@@ -553,14 +580,17 @@ export function generateTextOutput(data: ReportData): string {
   lines.push(`    Changed:    ${overallStats.changePercentage.toFixed(1)}%`);
   lines.push('');
   
-  const changedPages = pageDiffs.filter(p => p.hasChanges);
+  const changedPages = pageDiffs.filter(page => page.status === 'different');
+  const indeterminatePages = pageDiffs.filter(page => page.status === 'indeterminate');
   lines.push('─'.repeat(60));
-  lines.push(`                  PAGE SUMMARY (${changedPages.length}/${pageDiffs.length} changed)`);
+  lines.push(`          PAGE SUMMARY (${changedPages.length} changed, ${indeterminatePages.length} unverified)`);
   lines.push('─'.repeat(60));
   
   for (const page of pageDiffs) {
-    const status = page.hasChanges ? '✎ CHANGED' : '✓ OK';
-    lines.push(`  ${page.label}: ${status}`);
+    const pageStatus = page.status === 'different'
+      ? '✎ CHANGED'
+      : page.status === 'indeterminate' ? '? INDETERMINATE' : '✓ OK';
+    lines.push(`  ${page.label}: ${pageStatus}`);
   }
   
   lines.push('');
@@ -570,41 +600,54 @@ export function generateTextOutput(data: ReportData): string {
 }
 
 export function generateJsonOutput(data: ReportData): string {
+  const { result } = data;
   return JSON.stringify({
+    schemaVersion: result.schemaVersion,
+    engineVersion: result.engineVersion,
+    status: result.status,
     summary: {
-      originalFile: data.originalDoc.name,
-      originalPages: data.originalDoc.totalPages,
-      modifiedFile: data.modifiedDoc.name,
-      modifiedPages: data.modifiedDoc.totalPages,
+      originalFile: result.documents.original.name,
+      originalPages: result.documents.original.totalPages,
+      modifiedFile: result.documents.modified.name,
+      modifiedPages: result.documents.modified.totalPages,
       generatedAt: data.generatedAt,
     },
-    statistics: data.overallStats,
-    pages: data.pageDiffs.map(p => ({
+    statistics: result.overallStats,
+    diagnostics: result.diagnostics,
+    pages: result.pageDiffs.map(p => ({
       pageNumber: p.pageNumber,
       comparisonNumber: p.pageNumber,
       originalPageNumber: p.originalPageNumber,
       modifiedPageNumber: p.modifiedPageNumber,
+      status: p.status,
       hasChanges: p.hasChanges,
     })),
   }, null, 2);
 }
 
 export function generateJunitOutput(data: ReportData): string {
-  const changedPages = data.pageDiffs.filter(p => p.hasChanges);
+  const changedPages = data.result.pageDiffs.filter(page => page.status === 'different');
+  const indeterminatePages = data.result.pageDiffs.filter(page => page.status === 'indeterminate');
   const failures = changedPages.length;
-  const tests = data.pageDiffs.length;
+  const errors = indeterminatePages.length;
+  const tests = data.result.pageDiffs.length;
   
-  const testcases = data.pageDiffs.map(page => {
-    if (page.hasChanges) {
+  const testcases = data.result.pageDiffs.map(page => {
+    if (page.status === 'different') {
       return `    <testcase name="${page.label}" classname="pdf-diff">
       <failure message="${page.label} has differences">Changes detected in ${page.label}</failure>
+    </testcase>`;
+    }
+    if (page.status === 'indeterminate') {
+      return `    <testcase name="${page.label}" classname="pdf-diff">
+      <error message="${page.label} could not be verified">Text comparison unavailable: no extractable text.</error>
     </testcase>`;
     }
     return `    <testcase name="${page.label}" classname="pdf-diff"/>`;
   }).join('\n');
   
   return `<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="PDF Diff" tests="${tests}" failures="${failures}" errors="0">
+<testsuite name="PDF Diff" tests="${tests}" failures="${failures}" errors="${errors}">
 ${testcases}
 </testsuite>`;
 }

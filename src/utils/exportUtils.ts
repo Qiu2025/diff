@@ -1,13 +1,8 @@
 import jsPDF from 'jspdf';
-import type { DiffPart } from './diffUtils';
-import type { PDFDocument } from './pdfUtils';
-import { alignPages, combineStats, computeStats, computeTextDiff, formatPagePairLabel } from './diffUtils';
-import type { DiffStats } from './diffUtils';
+import type { ComparisonResult } from './diffUtils';
 
-export function exportDiffToPDF(
-  originalDoc: PDFDocument,
-  modifiedDoc: PDFDocument
-): void {
+export function exportDiffToPDF(result: ComparisonResult): void {
+  const { documents, pageDiffs, overallStats, status } = result;
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -30,20 +25,6 @@ export function exportDiffToPDF(
     return false;
   };
 
-  // Compute stats for all pages
-  const pagePairs = alignPages(originalDoc.pages, modifiedDoc.pages);
-  const allStats: DiffStats[] = [];
-  const allDiffs: Array<{ label: string; parts: DiffPart[] }> = [];
-
-  for (const pair of pagePairs) {
-    const parts = computeTextDiff(pair.originalText, pair.modifiedText);
-    const pageStats = computeStats(parts);
-    allStats.push(pageStats);
-    allDiffs.push({ label: formatPagePairLabel(pair), parts });
-  }
-
-  const combinedStats = combineStats(allStats);
-
   // Title
   doc.setFontSize(20);
   doc.setTextColor(99, 102, 241);
@@ -55,7 +36,9 @@ export function exportDiffToPDF(
   doc.setTextColor(100, 100, 100);
   doc.text(`Generated on: ${new Date().toLocaleString()}`, margin, yPosition);
   yPosition += 6;
-  doc.text(`Page comparisons: ${pagePairs.length}`, margin, yPosition);
+  doc.text(`Result: ${status}`, margin, yPosition);
+  yPosition += 6;
+  doc.text(`Page comparisons: ${pageDiffs.length}`, margin, yPosition);
   yPosition += 10;
 
   // File names
@@ -63,14 +46,14 @@ export function exportDiffToPDF(
   doc.setTextColor(50, 50, 50);
   doc.text('Original:', margin, yPosition);
   doc.setTextColor(100, 100, 100);
-  const origName = doc.splitTextToSize(originalDoc.name, maxWidth - 20);
+  const origName = doc.splitTextToSize(documents.original.name, maxWidth - 20);
   doc.text(origName, margin + 20, yPosition);
   yPosition += 6 * origName.length;
   
   doc.setTextColor(50, 50, 50);
   doc.text('Modified:', margin, yPosition);
   doc.setTextColor(100, 100, 100);
-  const modName = doc.splitTextToSize(modifiedDoc.name, maxWidth - 20);
+  const modName = doc.splitTextToSize(documents.modified.name, maxWidth - 20);
   doc.text(modName, margin + 20, yPosition);
   yPosition += 6 * modName.length + 4;
 
@@ -90,22 +73,22 @@ export function exportDiffToPDF(
   const statSpacing = maxWidth / 4;
   
   doc.setTextColor(34, 197, 94);
-  doc.text(`+ ${combinedStats.additions}`, margin + 5, yPosition);
+  doc.text(`+ ${overallStats.additions}`, margin + 5, yPosition);
   doc.setTextColor(100, 100, 100);
   doc.text('Additions', margin + 5, yPosition + 5);
   
   doc.setTextColor(239, 68, 68);
-  doc.text(`- ${combinedStats.deletions}`, margin + statSpacing, yPosition);
+  doc.text(`- ${overallStats.deletions}`, margin + statSpacing, yPosition);
   doc.setTextColor(100, 100, 100);
   doc.text('Deletions', margin + statSpacing, yPosition + 5);
   
   doc.setTextColor(100, 116, 139);
-  doc.text(`${combinedStats.unchanged}`, margin + statSpacing * 2, yPosition);
+  doc.text(`${overallStats.unchanged}`, margin + statSpacing * 2, yPosition);
   doc.setTextColor(100, 100, 100);
   doc.text('Unchanged', margin + statSpacing * 2, yPosition + 5);
   
   doc.setTextColor(99, 102, 241);
-  doc.text(`${combinedStats.changePercentage.toFixed(1)}%`, margin + statSpacing * 3, yPosition);
+  doc.text(`${overallStats.changePercentage.toFixed(1)}%`, margin + statSpacing * 3, yPosition);
   doc.setTextColor(100, 100, 100);
   doc.text('Changed', margin + statSpacing * 3, yPosition + 5);
   
@@ -114,7 +97,7 @@ export function exportDiffToPDF(
   // Diff content for all pages
   doc.setFontSize(14);
   
-  for (const { label, parts } of allDiffs) {
+  for (const { label, parts, status: pageStatus } of pageDiffs) {
     checkPageBreak(20);
     
     doc.setTextColor(50, 50, 50);
@@ -122,6 +105,14 @@ export function exportDiffToPDF(
     yPosition += 8;
 
     doc.setFontSize(9);
+
+    if (pageStatus === 'indeterminate') {
+      doc.setTextColor(161, 98, 7);
+      doc.text('Text comparison unavailable: no extractable text.', margin, yPosition);
+      yPosition += 10;
+      doc.setFontSize(14);
+      continue;
+    }
     
     // Process diff parts for this page
     for (const part of parts) {

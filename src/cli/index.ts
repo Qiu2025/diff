@@ -7,7 +7,7 @@ import open from 'open';
 import { input, confirm, select } from '@inquirer/prompts';
 
 import { extractTextFromPDFFile, parsePageSpec, type PDFDocument } from './pdfUtils.js';
-import { alignPages, computeTextDiff, computeStats, combineStats, formatPagePairLabel, hasChanges, type PageDiff, type DiffStats, type PagePair } from './diffUtils.js';
+import { alignPages, compareDocuments, type PagePair } from './diffUtils.js';
 import { 
   generateHtmlReport, 
   generateTextOutput, 
@@ -175,42 +175,22 @@ async function comparePdfs(
     pagePairs = alignPages(originalDoc.pages, modifiedDoc.pages);
   }
 
-  // Compute diffs
   const diffSpinner = ora('Computing differences...').start();
-  const pageDiffs: PageDiff[] = [];
-  const allStats: DiffStats[] = [];
-
-  for (const [index, pair] of pagePairs.entries()) {
-    const parts = computeTextDiff(pair.originalText, pair.modifiedText);
-    const pageStats = computeStats(parts);
-    const pageStructureChanged = pair.originalPageNumber === null || pair.modifiedPageNumber === null;
-    allStats.push(pageStats);
-    
-    pageDiffs.push({
-      ...pair,
-      pageNumber: index + 1,
-      label: formatPagePairLabel(pair),
-      parts,
-      hasChanges: pageStructureChanged || hasChanges(parts),
-    });
-  }
-
-  const overallStats = combineStats(allStats);
-  const hasDifferences = pageDiffs.some(p => p.hasChanges);
+  const comparisonResult = compareDocuments(originalDoc, modifiedDoc, pagePairs);
+  const { pageDiffs, overallStats, diagnostics } = comparisonResult;
+  const hasDifferences = pageDiffs.some(page => page.status === 'different');
+  const hasIncompleteComparisons = diagnostics.length > 0;
   
   // Apply threshold if specified
-  const exceedsThreshold = options.threshold !== undefined 
-    ? overallStats.changePercentage > options.threshold 
-    : hasDifferences;
+  const exceedsThreshold = hasIncompleteComparisons || (options.threshold !== undefined
+    ? overallStats.changePercentage > options.threshold
+    : hasDifferences);
   
   diffSpinner.succeed('Differences computed');
 
   // Prepare report data
   const reportData: ReportData = {
-    originalDoc,
-    modifiedDoc,
-    pageDiffs,
-    overallStats,
+    result: comparisonResult,
     generatedAt: new Date().toLocaleString(),
   };
 
@@ -264,10 +244,13 @@ async function comparePdfs(
   // Print final summary
   console.log('');
   if (hasDifferences) {
-    const changedCount = pageDiffs.filter(p => p.hasChanges).length;
+    const changedCount = pageDiffs.filter(page => page.status === 'different').length;
     console.log(chalk.yellow(`⚠️  ${changedCount} of ${pageDiffs.length} pages have differences`));
     console.log(chalk.yellow(`   ${overallStats.changePercentage.toFixed(1)}% of content changed`));
-  } else {
+  }
+  if (hasIncompleteComparisons) {
+    console.log(chalk.yellow(`?  ${diagnostics.length} page comparisons could not be verified from text`));
+  } else if (!hasDifferences) {
     console.log(chalk.green('✓ PDFs are identical'));
   }
   console.log('');

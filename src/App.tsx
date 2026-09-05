@@ -13,17 +13,9 @@ import {
 import type { ViewMode, Theme } from './components';
 import { extractTextFromPDF } from './utils/pdfUtils';
 import type { PDFDocument } from './utils/pdfUtils';
-import { alignPages, combineStats, computeTextDiff, computeStats, formatPagePairLabel } from './utils/diffUtils';
-import type { DiffPart, DiffStats, PagePair } from './utils/diffUtils';
+import { compareDocuments } from './utils/diffUtils';
 import { exportDiffToPDF } from './utils/exportUtils';
 import './App.css';
-
-interface PageDiffResult extends PagePair {
-  comparisonNumber: number;
-  label: string;
-  parts: DiffPart[];
-  stats: DiffStats;
-}
 
 function App() {
   const [originalFile, setOriginalFile] = useState<File | null>(null);
@@ -121,69 +113,23 @@ function App() {
     }
   }, []);
 
-  const pagePairs = useMemo(
-    () => originalDoc && modifiedDoc ? alignPages(originalDoc.pages, modifiedDoc.pages) : [],
+  const comparisonResult = useMemo(
+    () => originalDoc && modifiedDoc ? compareDocuments(originalDoc, modifiedDoc) : null,
     [originalDoc, modifiedDoc]
   );
-
-  const { diffParts, stats, totalPages, allPagesDiffs, currentPair } = useMemo(() => {
-    if (!originalDoc || !modifiedDoc) {
-      return { diffParts: null, stats: null, totalPages: 0, allPagesDiffs: null, currentPair: null };
-    }
-
-    if (showAllPages) {
-      // Compute diffs for all pages
-      const allDiffs: PageDiffResult[] = [];
-      const allStats: DiffStats[] = [];
-      
-      for (let i = 0; i < pagePairs.length; i++) {
-        const pair = pagePairs[i];
-        const parts = computeTextDiff(pair.originalText, pair.modifiedText);
-        const pageStats = computeStats(parts);
-        
-        allDiffs.push({
-          ...pair,
-          comparisonNumber: i + 1,
-          label: formatPagePairLabel(pair),
-          parts,
-          stats: pageStats
-        });
-        allStats.push(pageStats);
-      }
-      
-      return {
-        diffParts: null,
-        stats: combineStats(allStats),
-        totalPages: pagePairs.length,
-        allPagesDiffs: allDiffs,
-        currentPair: null,
-      };
-    } else {
-      const pair = pagePairs[currentPage - 1] ?? pagePairs[0];
-      const parts = computeTextDiff(pair?.originalText ?? '', pair?.modifiedText ?? '');
-      const diffStats = computeStats(parts);
-
-      return {
-        diffParts: parts,
-        stats: diffStats,
-        totalPages: pagePairs.length,
-        allPagesDiffs: null as PageDiffResult[] | null,
-        currentPair: pair ?? null,
-      };
-    }
-  }, [originalDoc, modifiedDoc, pagePairs, currentPage, showAllPages]);
+  const totalPages = comparisonResult?.pageDiffs.length ?? 0;
+  const currentPageDiff = comparisonResult?.pageDiffs[currentPage - 1] ?? comparisonResult?.pageDiffs[0] ?? null;
+  const stats = showAllPages ? comparisonResult?.overallStats : currentPageDiff?.stats;
 
   useEffect(() => {
     if (totalPages > 0 && currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
   const handleExport = useCallback(() => {
-    if (!originalDoc || !modifiedDoc) return;
-    
-    exportDiffToPDF(originalDoc, modifiedDoc);
-  }, [originalDoc, modifiedDoc]);
+    if (comparisonResult) exportDiffToPDF(comparisonResult);
+  }, [comparisonResult]);
 
-  const showComparison = originalDoc && modifiedDoc && (diffParts || allPagesDiffs);
+  const showComparison = comparisonResult !== null;
 
   return (
     <div className="app">
@@ -277,9 +223,18 @@ function App() {
               </div>
               <div className="comparison-actions">
                 <ViewModeTabs activeMode={viewMode} onModeChange={setViewMode} />
-                <ExportButton onClick={handleExport} disabled={!originalDoc || !modifiedDoc} />
+                <ExportButton onClick={handleExport} disabled={!comparisonResult} />
               </div>
             </div>
+
+            {comparisonResult.diagnostics.length > 0 && (
+              <div className="comparison-warning" role="status">
+                <strong>Text comparison incomplete</strong>
+                <span>
+                  {comparisonResult.diagnostics.length} page comparison{comparisonResult.diagnostics.length === 1 ? '' : 's'} contain no extractable text. Visual comparison or OCR is required to verify them.
+                </span>
+              </div>
+            )}
 
             {stats && <DiffStatsComponent {...stats} />}
 
@@ -288,7 +243,7 @@ function App() {
                 <PageSelector
                   currentPage={currentPage}
                   totalPages={totalPages}
-                  pageLabel={currentPair ? formatPagePairLabel(currentPair) : undefined}
+                  pageLabel={currentPageDiff?.label}
                   onPageChange={setCurrentPage}
                   disabled={showAllPages}
                 />
@@ -304,34 +259,38 @@ function App() {
             )}
 
             {showAllPages ? (
-              allPagesDiffs ? (
-                <div className="all-pages-view">
-                  {allPagesDiffs.map(({ comparisonNumber, label, parts, originalText, modifiedText, stats: pageStats }) => (
-                    <section key={comparisonNumber} className="page-section" aria-labelledby={`page-${comparisonNumber}-title`}>
-                      <div className="page-section-header">
-                        <h3 id={`page-${comparisonNumber}-title`}>{label}</h3>
-                        <div className="page-stats" aria-label={`${pageStats.additions} additions and ${pageStats.deletions} removals`}>
-                          <span className="stat-badge additions">+{pageStats.additions}</span>
-                          <span className="stat-badge deletions">−{pageStats.deletions}</span>
-                        </div>
+              <div className="all-pages-view">
+                {comparisonResult.pageDiffs.map(({ pageNumber, label, parts, originalText, modifiedText, stats: pageStats, status }) => (
+                  <section key={pageNumber} className="page-section" aria-labelledby={`page-${pageNumber}-title`}>
+                    <div className="page-section-header">
+                      <h3 id={`page-${pageNumber}-title`}>{label}</h3>
+                      <div className="page-stats" aria-label={`${pageStats.additions} additions and ${pageStats.deletions} removals`}>
+                        {status === 'indeterminate' ? (
+                          <span className="stat-badge indeterminate">Text unavailable</span>
+                        ) : (
+                          <>
+                            <span className="stat-badge additions">+{pageStats.additions}</span>
+                            <span className="stat-badge deletions">−{pageStats.deletions}</span>
+                          </>
+                        )}
                       </div>
-                      <DiffView
-                        parts={parts}
-                        mode={viewMode}
-                        originalText={originalText}
-                        modifiedText={modifiedText}
-                      />
-                    </section>
-                  ))}
-                </div>
-              ) : null
+                    </div>
+                    <DiffView
+                      parts={parts}
+                      mode={viewMode}
+                      originalText={originalText}
+                      modifiedText={modifiedText}
+                    />
+                  </section>
+                ))}
+              </div>
             ) : (
-              diffParts && (
+              currentPageDiff && (
                 <DiffView
-                  parts={diffParts}
+                  parts={currentPageDiff.parts}
                   mode={viewMode}
-                  originalText={currentPair?.originalText ?? ''}
-                  modifiedText={currentPair?.modifiedText ?? ''}
+                  originalText={currentPageDiff.originalText}
+                  modifiedText={currentPageDiff.modifiedText}
                 />
               )
             )}

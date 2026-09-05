@@ -1,4 +1,5 @@
 import { diffWords, diffWordsWithSpace, diffLines } from 'diff';
+import type { PDFDocument } from './pdfModel';
 
 export interface DiffPart {
   value: string;
@@ -23,7 +24,31 @@ export interface PageDiff extends PagePair {
   pageNumber: number;
   label: string;
   parts: DiffPart[];
+  stats: DiffStats;
+  status: ComparisonStatus;
   hasChanges: boolean;
+}
+
+export type ComparisonStatus = 'equal' | 'different' | 'indeterminate';
+
+export interface ComparisonDiagnostic {
+  code: 'no-extractable-text';
+  comparisonNumber: number;
+  side: 'original' | 'modified' | 'both';
+  message: string;
+}
+
+export interface ComparisonResult {
+  schemaVersion: 1;
+  engineVersion: 'text-v1';
+  status: ComparisonStatus;
+  documents: {
+    original: { name: string; totalPages: number };
+    modified: { name: string; totalPages: number };
+  };
+  pageDiffs: PageDiff[];
+  overallStats: DiffStats;
+  diagnostics: ComparisonDiagnostic[];
 }
 
 export interface AlignedDiffRow {
@@ -196,14 +221,18 @@ export function alignPages(originalPages: TextPage[], modifiedPages: TextPage[])
   return alignSequences(
     original,
     modified,
-    (left, right) => fingerprintSimilarity(left.fingerprint, right.fingerprint),
+    (left, right) => (
+      !left.fingerprint.normalized && !right.fingerprint.normalized
+        ? MIN_PAGE_SIMILARITY
+        : fingerprintSimilarity(left.fingerprint, right.fingerprint)
+    ),
     MIN_PAGE_SIMILARITY
   ).map(({ original: oldPage, modified: newPage }) => ({
     originalPageNumber: oldPage?.page.pageNumber ?? null,
     modifiedPageNumber: newPage?.page.pageNumber ?? null,
     originalText: oldPage?.page.text ?? '',
     modifiedText: newPage?.page.text ?? '',
-    similarity: oldPage && newPage
+    similarity: oldPage?.fingerprint.normalized && newPage?.fingerprint.normalized
       ? fingerprintSimilarity(oldPage.fingerprint, newPage.fingerprint)
       : null,
   }));
@@ -301,4 +330,64 @@ export function combineStats(statsArray: DiffStats[]): DiffStats {
   combined.changePercentage = totalWords > 0 ? (combined.totalChanges / totalWords) * 100 : 0;
   
   return combined;
+}
+
+export function compareDocuments(
+  originalDoc: PDFDocument,
+  modifiedDoc: PDFDocument,
+  pagePairs: PagePair[] = alignPages(originalDoc.pages, modifiedDoc.pages)
+): ComparisonResult {
+  const diagnostics: ComparisonDiagnostic[] = [];
+  const pageDiffs = pagePairs.map((pair, index): PageDiff => {
+    const pageNumber = index + 1;
+    const parts = computeTextDiff(pair.originalText, pair.modifiedText);
+    const stats = computeStats(parts);
+    const pageStructureChanged = pair.originalPageNumber === null || pair.modifiedPageNumber === null;
+    const originalTextMissing = pair.originalPageNumber !== null && !pair.originalText.trim();
+    const modifiedTextMissing = pair.modifiedPageNumber !== null && !pair.modifiedText.trim();
+    let status: ComparisonStatus;
+
+    if (pageStructureChanged) {
+      status = 'different';
+    } else if (originalTextMissing || modifiedTextMissing) {
+      status = 'indeterminate';
+      const side = originalTextMissing && modifiedTextMissing
+        ? 'both'
+        : originalTextMissing ? 'original' : 'modified';
+      diagnostics.push({
+        code: 'no-extractable-text',
+        comparisonNumber: pageNumber,
+        side,
+        message: `${formatPagePairLabel(pair)} has no extractable text on ${side === 'both' ? 'either side' : `the ${side} side`}.`,
+      });
+    } else {
+      status = hasChanges(parts) ? 'different' : 'equal';
+    }
+
+    return {
+      ...pair,
+      pageNumber,
+      label: formatPagePairLabel(pair),
+      parts,
+      stats,
+      status,
+      hasChanges: status === 'different',
+    };
+  });
+  const status: ComparisonStatus = pageDiffs.some(page => page.status === 'different')
+    ? 'different'
+    : pageDiffs.some(page => page.status === 'indeterminate') ? 'indeterminate' : 'equal';
+
+  return {
+    schemaVersion: 1,
+    engineVersion: 'text-v1',
+    status,
+    documents: {
+      original: { name: originalDoc.name, totalPages: originalDoc.totalPages },
+      modified: { name: modifiedDoc.name, totalPages: modifiedDoc.totalPages },
+    },
+    pageDiffs,
+    overallStats: combineStats(pageDiffs.map(page => page.stats)),
+    diagnostics,
+  };
 }
