@@ -9,79 +9,127 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-export async function extractTextFromPDF(file: File): Promise<PDFDocument> {
-  const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-  let pdf: Awaited<typeof loadingTask.promise>;
+type LoadedPDF = Awaited<ReturnType<typeof pdfjsLib.getDocument>['promise']>;
 
-  try {
-    pdf = await loadingTask.promise;
-  } catch (error) {
-    await loadingTask.destroy();
-    throw error;
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new DOMException('PDF operation was aborted.', 'AbortError');
   }
-  const pages: PDFPage[] = [];
-
-  try {
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-
-      try {
-        const textContent = await page.getTextContent();
-        const viewport = page.getViewport({ scale: 1 });
-        const textItems = textContent.items.filter(item => 'str' in item);
-        pages.push(buildPDFPage(i, viewport, textItems));
-      } finally {
-        page.cleanup();
-      }
-    }
-  } finally {
-    await pdf.destroy();
-  }
-
-  return {
-    name: file.name,
-    pages,
-    totalPages: pdf.numPages,
-  };
 }
 
-export async function renderPageToCanvas(
-  file: File,
-  pageNumber: number,
-  canvas: HTMLCanvasElement,
-  scale: number = 1.5
-): Promise<void> {
+export async function openPdfSession(file: File, signal?: AbortSignal) {
+  throwIfAborted(signal);
   const arrayBuffer = await file.arrayBuffer();
+  throwIfAborted(signal);
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-  let pdf: Awaited<typeof loadingTask.promise>;
+  const abortLoading = () => void loadingTask.destroy();
+  let pdf: LoadedPDF;
 
+  signal?.addEventListener('abort', abortLoading, { once: true });
   try {
     pdf = await loadingTask.promise;
+    throwIfAborted(signal);
   } catch (error) {
     await loadingTask.destroy();
+    throwIfAborted(signal);
     throw error;
+  } finally {
+    signal?.removeEventListener('abort', abortLoading);
   }
+  let destroyed = false;
 
-  try {
-    const page = await pdf.getPage(pageNumber);
+  const getPage = async (pageNumber: number) => {
+    if (destroyed) throw new Error('PDF session has been destroyed.');
+    if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > pdf.numPages) {
+      throw new RangeError(`Page number must be between 1 and ${pdf.numPages}.`);
+    }
+    return pdf.getPage(pageNumber);
+  };
+
+  const extractPage = async (pageNumber: number, signal?: AbortSignal): Promise<PDFPage> => {
+    throwIfAborted(signal);
+    const page = await getPage(pageNumber);
 
     try {
-      const viewport = page.getViewport({ scale });
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('Could not get canvas context');
-
-      await page.render({
-        canvasContext: context,
-        viewport,
-      }).promise;
+      const textContent = await page.getTextContent();
+      throwIfAborted(signal);
+      const viewport = page.getViewport({ scale: 1 });
+      const textItems = textContent.items.filter(item => 'str' in item);
+      return buildPDFPage(pageNumber, viewport, textItems);
     } finally {
       page.cleanup();
     }
+  };
+
+  return {
+    name: file.name,
+    totalPages: pdf.numPages,
+
+    extractPage,
+
+    async extractDocument(signal?: AbortSignal): Promise<PDFDocument> {
+      const pages: PDFPage[] = [];
+
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        pages.push(await extractPage(pageNumber, signal));
+      }
+
+      return { name: file.name, pages, totalPages: pdf.numPages };
+    },
+
+    async renderPageToCanvas(
+      pageNumber: number,
+      canvas: HTMLCanvasElement,
+      scale = 1.5,
+      signal?: AbortSignal
+    ): Promise<void> {
+      throwIfAborted(signal);
+      const page = await getPage(pageNumber);
+      const abort = () => renderTask.cancel();
+      const viewport = page.getViewport({ scale });
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      const context = canvas.getContext('2d');
+
+      if (!context) {
+        page.cleanup();
+        throw new Error('Could not get canvas context');
+      }
+
+      const renderTask = page.render({ canvasContext: context, viewport });
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) renderTask.cancel();
+
+      try {
+        throwIfAborted(signal);
+        await renderTask.promise;
+      } catch (error) {
+        throwIfAborted(signal);
+        throw error;
+      } finally {
+        signal?.removeEventListener('abort', abort);
+        page.cleanup();
+      }
+    },
+
+    async destroy(): Promise<void> {
+      if (destroyed) return;
+      destroyed = true;
+      await pdf.destroy();
+    },
+  };
+}
+
+export type PdfSession = Awaited<ReturnType<typeof openPdfSession>>;
+
+export async function extractTextFromPDF(file: File, signal?: AbortSignal): Promise<PDFDocument> {
+  const session = await openPdfSession(file, signal);
+
+  try {
+    return await session.extractDocument(signal);
   } finally {
-    await pdf.destroy();
+    await session.destroy();
   }
 }
