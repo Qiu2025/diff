@@ -1,9 +1,12 @@
 # PDF Diff Project Context
 
-> Last audited: 2026-09-05 at commit `91e2451` (`refactor: rebuild frontend`).
+> Last audited: 2026-09-05 through commit `ee6bba6` (`feat: add reusable PDF sessions`).
 >
 > This is a context document, not a backlog. New contributors and Codex chats
 > should verify the current checkout before applying any path-specific detail.
+> Current implementation progress, test coverage, and prioritized next work are
+> maintained in [`PROJECT_STATUS.md`](./PROJECT_STATUS.md); update it with every
+> completed task.
 
 ## Product direction
 
@@ -62,7 +65,7 @@ and the PDF.js worker is bundled locally.
 
 - Entry point: `src/cli/index.ts`.
 - Node PDF.js adapter: `src/cli/pdfUtils.ts`.
-- A second copy of the diff helpers: `src/cli/diffUtils.ts`.
+- `src/cli/diffUtils.ts` re-exports the shared runtime-neutral diff core.
 - HTML, text, JSON, and JUnit rendering: `src/cli/reportGenerator.ts`.
 - PDF report generation launches Chromium through Playwright.
 - `scripts/build-cli.mjs` bundles the CLI with esbuild while leaving runtime
@@ -73,7 +76,7 @@ and the PDF.js worker is bundled locally.
 - The web application is built in Docker and served by Nginx.
 - `.github/workflows/docker-build.yml` builds and pushes the Docker image after
   pushes to `main`.
-- There is currently no automated core test suite or `test` script.
+- `npm test` runs the core regression cases in `tests/pdf-diff.test.ts`.
 - The static CLI documentation is maintained separately in `public/cli.html`.
 
 ## Current processing flow
@@ -82,22 +85,23 @@ The browser path is currently:
 
 ```text
 File
-  -> File.arrayBuffer()
-  -> PDF.js getDocument()
-  -> getTextContent() for every page
-  -> flatten each page to one text string
-  -> store both complete text documents in React state
-  -> compare pages with the same array index using diffWords()
-  -> compute statistics inside React useMemo()
-  -> render the selected page or every page
+  -> openPdfSession() / PDF.js getDocument()
+  -> extract geometry and positioned text runs page by page
+  -> destroy the text-only session in finally
+  -> align pages, then related lines
+  -> compareDocuments()
+  -> one versioned ComparisonResult
+  -> React UI and report/export renderers
 ```
 
-Export does not consume the already calculated result. It computes every page
-diff again in `src/utils/exportUtils.ts`.
+The browser session also exposes cancellable page extraction and Canvas
+rendering for future visual analysis. The current text-only UI does not retain
+an open PDF after extraction. Browser export consumes the existing comparison
+result instead of recomputing it.
 
-The CLI follows a parallel but separate path: it reads both complete files,
-extracts all pages, pairs pages by array index, computes another copy of the
-same text diff, then sends the result to its report generators.
+The CLI uses a Node-specific PDF.js adapter but produces the same page model and
+calls the shared alignment/comparison core. Text, HTML, JSON, JUnit, and PDF
+reports consume the resulting `ComparisonResult`.
 
 PDF.js has its own worker in the browser, but text reconstruction, jsdiff,
 statistics, result assembly, and React rendering still run on the caller/UI
@@ -116,95 +120,68 @@ thread.
 - The repository is still small enough to establish better boundaries without
   a large rewrite.
 
-## Confirmed architectural limitations
+## Remaining architectural limitations
 
-### 1. Page identity is incorrectly assumed to equal page index
+### 1. Text reconstruction and reading order are still heuristic
 
-Browser, CLI, and browser export compare `original.pages[i]` with
-`modified.pages[i]`. Inserting or deleting one page can therefore cause every
-following page to be reported as changed.
-
-The current `PageDiff` type has one `pageNumber`; it cannot represent an
-original page matched to a different modified page, a one-sided page, or an
-ambiguous match.
-
-### 2. Empty extracted text can be mistaken for equality
-
-The page model contains only `{ pageNumber, text }`. Two scanned or image-only
-pages can both produce an empty string and be reported as unchanged. The CLI
-can then state that the PDFs are identical even though only their extractable
-text was compared.
-
-A comparison needs at least `equal`, `different`, and `indeterminate` outcomes,
-plus extraction and analysis diagnostics.
-
-### 3. Text reconstruction is a fragile heuristic
-
-Both browser and CLI reconstruct text using fixed X/Y spacing thresholds. They
-discard direction, page geometry, height, font identity, explicit end-of-line
-information, and the relation between characters and page coordinates.
+The shared page model now preserves geometry, rotation, positioned text runs,
+direction, font identity, ranges, and explicit end-of-line information. The
+flattened reading order still relies on fixed X/Y spacing thresholds.
 
 This is unreliable for multi-column layouts, RTL or vertical text, rotations,
 superscripts, ligatures, line-end hyphenation, and PDFs whose content-stream
 order differs from visual reading order.
 
-### 4. The current model loses evidence needed by future features
+### 2. Page matching has no visual evidence yet
 
-Flattening a page to one string prevents reliable coordinate highlights,
-layout comparison, moved-text detection, font comparison, OCR integration,
-page citations, and layout-preserving translation.
+`PagePair` keeps original and modified page identities separate, and ordered
+text fingerprints handle inserted and removed text pages. Pages with no
+extractable text can be paired by position but have no similarity score; highly
+dissimilar text pages can also be represented as one-sided pairs.
 
-The project does not need a complete PDF object model now. It does need a
-small, page-scoped representation that preserves page geometry and compact
-text runs with coordinates and provenance.
+Visual fingerprints are needed before image-only page matching can be treated
+as reliable.
 
-### 5. Work is synchronous and has no resource budget
+### 3. Work is synchronous and has no resource budget
 
-`diffWords()` is called synchronously from React `useMemo()`. There is no job
-identity, cancellation, timeout, maximum edit complexity, text-item budget, or
+`compareDocuments()` is called synchronously from React `useMemo()`. There is no
+comparison job identity, timeout, maximum edit complexity, text-item budget, or
 rendered-pixel budget.
 
 "Review all pages" retains every page's original text, modified text, diff
-parts, and statistics, then mounts all page details in the DOM. Export performs
-the diff a second time.
+parts, and statistics, then mounts all page details in the DOM.
 
-### 6. PDF resource lifetime is uncontrolled
+### 4. Browser job cancellation is not wired through the UI
 
-Browser and CLI extraction do not explicitly clean up pages or destroy opened
-PDF documents. The existing `renderPageToCanvas()` helper re-reads and reopens
-the complete PDF for every rendered page and must not become the basis of
-visual diff or OCR.
+`PdfSession` opens a browser PDF once, validates page access, supports
+`AbortSignal`, cleans up pages, and destroys the document. CLI extraction also
+cleans up pages and documents. `App.tsx` does not yet create a request identity
+or abort an older extraction when a file is replaced or the comparison resets.
 
-### 7. Core behavior has multiple sources of truth
+### 5. Comparison semantics and metrics remain intentionally narrow
 
-Browser and CLI maintain nearly identical diff and text-reconstruction code.
-React also contains a separate statistics aggregation, and browser export runs
-another comparison. Future normalization, page matching, OCR, and visual logic
-would drift between these surfaces if this continues.
-
-### 8. Comparison semantics and metrics are underspecified
-
-The current primary operation is word diff. Whitespace/layout changes are not
-part of that semantic result, while replacement statistics count both a
-deletion and an addition. Multilingual token and percentage semantics are not
-defined, but the CLI threshold already treats the percentage as a stable
-machine decision.
+The result has a schema version, text-engine version, page pairs, per-page
+statistics, diagnostics, and explicit `equal`, `different`, and `indeterminate`
+states. The current primary operation remains word diff. Whitespace/layout
+changes are not part of that semantic result, replacement statistics count
+both a deletion and an addition, and multilingual percentage semantics are not
+defined.
 
 Text-semantic, text-exact, visual, and structural results should remain
 separate instead of being compressed into one ambiguous change percentage.
 
-### 9. Test and fixture coverage is insufficient
+### 6. Test and fixture coverage is still narrow
 
-There is no automated core test suite. The current modified demo generator also
-duplicates a block of content on its second page, so the demos cannot be treated
-as trustworthy correctness fixtures.
+The regression suite covers the deterministic demo, core text behavior, line
+and page alignment, the page model, explicit comparison states, HTML escaping,
+and JSON/JUnit result contracts. `PdfSession` currently has Chromium verification
+but no automated browser regression.
 
-A future regression corpus needs to cover at least page insertion/removal,
-blank and image-only pages, scanned pages, multi-column text, rotation, RTL and
-CJK text, ligatures, line wrapping/hyphenation, damaged/encrypted PDFs, and very
-different long pages.
+The corpus still needs scanned/image-only pages, multi-column text, rotation,
+RTL and CJK text, ligatures, line wrapping/hyphenation, damaged/encrypted PDFs,
+and very different long pages.
 
-### 10. CLI and public contract details have drifted
+### 7. CLI and public contract details have drifted
 
 - `package.json` reports version `0.0.3`; the CLI hard-codes `1.0.4`.
 - The repository URL in `package.json` contains a duplicated `https://`.
@@ -213,7 +190,8 @@ different long pages.
 - PDF report failure can be printed but not propagated as a failed command.
 - PDF-only mode can delete its temporary HTML even after PDF generation fails.
 - The CLI may automatically download Chromium while processing a comparison.
-- JSON output has no schema, engine, normalization, or metrics version.
+- Machine-readable output has a schema and engine version, but normalization
+  and metrics versions are not explicit.
 
 These are not reasons to redesign the CLI, but they matter for trust and for a
 stable automation contract.
@@ -361,8 +339,7 @@ cheap to decide when a concrete runtime or deployment requirement exists.
   parsing fails, the old parsed document can remain paired with the new name.
 - A late result from an older selection can overwrite a newer selection because
   there is no job/request identity.
-- Current-page state is not always clamped after replacing documents with a
-  smaller document.
+- One shared `isProcessing` boolean does not model overlapping async loads.
 - Browser export is statically imported and contributes to the initial feature
   graph even when no export is requested.
 - The Docker build uses `npm install`, and the repository has no `.dockerignore`.
@@ -372,11 +349,12 @@ cheap to decide when a concrete runtime or deployment requirement exists.
 
 ## Validation snapshot
 
-At the audit snapshot:
+At the current audit snapshot:
 
+- `npm test` passed the 11 core regression cases;
 - `npm run lint` passed;
 - non-incremental TypeScript checks passed for browser, CLI, and Node configs;
+- Web and CLI builds passed; the Web build retained its existing large-chunk
+  warning;
 - the Git working tree was clean;
-- there was no automated core test suite, so static checks did not establish PDF
-  comparison correctness.
-
+- the manual Chromium checks recorded in `PROJECT_STATUS.md` passed.
