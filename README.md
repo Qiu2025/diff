@@ -120,6 +120,9 @@ cd pdf-diff
 # Install dependencies
 npm install
 
+# Install Chromium for the browser regression test
+npx playwright install chromium
+
 # Start development server
 npm run dev
 
@@ -131,4 +134,7 @@ npm run preview
 
 # Run linter
 npm run lint
+
+# Run core and browser regression tests
+npm test
 ```

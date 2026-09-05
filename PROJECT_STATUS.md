@@ -32,7 +32,8 @@ Keep this file current and concise. Durable product decisions belong in
 | Page alignment | Text fingerprints and ordered alignment preserve later page pairing after insertions/removals | Automated | `5ed9544` |
 | PDF page model | Page geometry, rotation, positioned text runs, source ranges, line endings, and extraction status | Automated | `7cbf2b4` |
 | Comparison result | One versioned result with `equal`, `different`, and `indeterminate`; Web, CLI, JSON, JUnit, HTML, and browser PDF export consume it | Automated for core/HTML/JSON/JUnit; browser PDF export is not automated | `50571a8` |
-| PDF session | Browser PDF opens once per session; supports page/document extraction, page rendering, cancellation, and idempotent destruction | Chromium verification only; automated browser regression is still missing | `ee6bba6` |
+| PDF session | Browser PDF opens once per session; supports page/document extraction, page rendering, cancellation, and idempotent destruction | Automated in Chromium, including the sample comparison flow | `ee6bba6` |
+| Browser request lifecycle | New file/demo requests cancel and invalidate older extraction; reset aborts active work and stale results cannot restore cleared state | Automated in Chromium for replacement and reset races | Current working tree |
 
 `src/cli/diffUtils.ts` re-exports the shared core; it is not a second diff
 implementation. The browser text-only path currently opens a session, extracts
@@ -41,7 +42,7 @@ open PDF after extraction until visual comparison has a real consumer.
 
 ## Regression coverage
 
-`npm test` currently runs 11 cases in `tests/pdf-diff.test.ts`:
+`npm test` currently runs 12 cases across the core and browser regression files:
 
 | Behavior | Coverage |
 | --- | --- |
@@ -56,8 +57,9 @@ open PDF after extraction until visual comparison has a real consumer.
 | CLI page-range parsing | Automated |
 | HTML escaping plus JSON result contract | Automated |
 | Indeterminate HTML/JSON/JUnit reporting | Automated |
-| `PdfSession` extraction/render/cancel/destroy behavior | Manual Chromium check only |
-| React upload/replacement/race behavior | Not automated |
+| `PdfSession` extraction/render/cancel/destroy behavior | Automated in Chromium |
+| Sample-file browser comparison flow | Automated in Chromium |
+| React upload/replacement/race behavior | Automated in Chromium for replacement and reset races |
 | Browser PDF export file contents/layout | Not automated |
 | CLI process exit codes and full report generation | Manually smoke-tested, not automated |
 | Large, scanned, multilingual, rotated, damaged, or encrypted PDFs | Not covered by the regression corpus |
@@ -74,28 +76,23 @@ bugs, especially for arbitrary PDF producers and layouts.
   document budget.
 - Text comparison still runs synchronously from React and materializes the
   complete result for all pages.
-- `AbortSignal` is available in `PdfSession`, but `App.tsx` does not yet use a
-  request identity/controller to prevent stale file-processing results.
+- `App.tsx` uses one active request identity/controller so replacement, demo,
+  and reset operations cancel and invalidate stale extraction results.
 - Visual, structural, and OCR analysis do not exist yet. Textless pages are
   correctly reported as indeterminate instead of being guessed equal.
 - The production bundle still reports a chunk larger than 500 kB.
 
 ## Next work, in priority order
 
-1. **Automate the browser PDF session regression.** Cover open-once extraction,
-   rendering, cancellation, destruction, and the sample comparison flow in a
-   repeatable browser test.
-2. **Add request identity and cancellation to `App.tsx`.** A replaced file or
-   reset must not be overwritten by an older asynchronous extraction result.
-3. **Implement a current-page visual diff vertical slice.** Keep visual status
+1. **Implement a current-page visual diff vertical slice.** Keep visual status
    separate from text status; use fixed render limits and release canvases/image
    data immediately.
-4. **Add measured resource limits before all-page visual processing.** Introduce
+2. **Add measured resource limits before all-page visual processing.** Introduce
    one application worker and explicit text/pixel budgets only when the visual
    path demonstrates the need.
-5. **Expand the regression corpus.** Prioritize image-only/scanned, rotation,
+3. **Expand the regression corpus.** Prioritize image-only/scanned, rotation,
    multi-column, CJK/RTL, ligatures, damaged/encrypted, and large PDFs.
-6. **Then add OCR through the same positioned-page model**, followed by local AI
+4. **Then add OCR through the same positioned-page model**, followed by local AI
    change explanation with citations. General document AI and
    layout-preserving translation remain later phases.
 
@@ -105,24 +102,27 @@ foundations remain unfinished.
 
 ## Latest verification
 
-Verified on 2026-09-05 against the implementation through `ee6bba6`:
+Verified on 2026-09-05 against the current working tree after `ee6bba6`:
 
 ```text
-npm test                                                        passed
+npm test                                                        passed (12 cases, including Chromium)
 npm run lint                                                    passed
 ./node_modules/.bin/tsc -p tsconfig.app.json --noEmit --incremental false   passed
 ./node_modules/.bin/tsc -p tsconfig.cli.json --noEmit --incremental false   passed
 ./node_modules/.bin/tsc -p tsconfig.node.json --noEmit --incremental false  passed
 npm run build                                                   passed
 npm run build:cli                                               passed
+git diff --check -- . ':(exclude)public/demo-original.pdf' ':(exclude)public/demo-modified.pdf'   passed
 ```
 
-Additional Chromium checks performed manually:
+Automated Chromium coverage now verifies:
 
-- `PdfSession` extracted page 1 from the demo, rendered it to a 297 x 420
-  canvas, rejected access after destruction, and returned `AbortError` for an
-  aborted extraction.
-- The sample-file UI produced a two-page comparison and logged no browser
-  console errors.
+- one `PdfSession` extracts and renders the demo, returns `AbortError` for an
+  aborted extraction, rejects access after destruction, and allows repeated
+  destruction;
+- the sample-file UI produces a two-page comparison without browser errors;
+- a slow replaced selection cannot overwrite a newer result, and clearing the
+  UI during extraction prevents stale state from returning.
 
-The Web build passed with the existing large-chunk warning.
+Browser PDF export contents and layout were not manually rechecked in this
+task. The Web build passed with the existing large-chunk warning.

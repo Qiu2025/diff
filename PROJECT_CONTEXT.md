@@ -144,19 +144,21 @@ as reliable.
 
 ### 3. Work is synchronous and has no resource budget
 
-`compareDocuments()` is called synchronously from React `useMemo()`. There is no
-comparison job identity, timeout, maximum edit complexity, text-item budget, or
-rendered-pixel budget.
+`compareDocuments()` is called synchronously from React `useMemo()`. The
+comparison phase has no cancellation, timeout, maximum edit complexity,
+text-item budget, or rendered-pixel budget.
 
 "Review all pages" retains every page's original text, modified text, diff
 parts, and statistics, then mounts all page details in the DOM.
 
-### 4. Browser job cancellation is not wired through the UI
+### 4. Browser cancellation stops extraction, not synchronous comparison
 
 `PdfSession` opens a browser PDF once, validates page access, supports
-`AbortSignal`, cleans up pages, and destroys the document. CLI extraction also
-cleans up pages and documents. `App.tsx` does not yet create a request identity
-or abort an older extraction when a file is replaced or the comparison resets.
+`AbortSignal`, cleans up pages, and destroys the document. `App.tsx` keeps one
+active request identity and aborts older extraction when a file is replaced,
+the demo is restarted, or the comparison resets. CLI extraction also cleans up
+pages and documents. Cancellation does not interrupt the synchronous
+`compareDocuments()` call once extraction is complete.
 
 ### 5. Comparison semantics and metrics remain intentionally narrow
 
@@ -174,8 +176,8 @@ separate instead of being compressed into one ambiguous change percentage.
 
 The regression suite covers the deterministic demo, core text behavior, line
 and page alignment, the page model, explicit comparison states, HTML escaping,
-and JSON/JUnit result contracts. `PdfSession` currently has Chromium verification
-but no automated browser regression.
+JSON/JUnit result contracts, `PdfSession`, the sample browser flow, and stale
+replacement/reset races in Chromium.
 
 The corpus still needs scanned/image-only pages, multi-column text, rotation,
 RTL and CJK text, ligatures, line wrapping/hyphenation, damaged/encrypted PDFs,
@@ -335,11 +337,6 @@ cheap to decide when a concrete runtime or deployment requirement exists.
 
 ## Known small correctness and maintenance issues
 
-- Replacing a selected file updates the displayed `File` before parsing. If
-  parsing fails, the old parsed document can remain paired with the new name.
-- A late result from an older selection can overwrite a newer selection because
-  there is no job/request identity.
-- One shared `isProcessing` boolean does not model overlapping async loads.
 - Browser export is statically imported and contributes to the initial feature
   graph even when no export is requested.
 - The Docker build uses `npm install`, and the repository has no `.dockerignore`.
@@ -351,10 +348,10 @@ cheap to decide when a concrete runtime or deployment requirement exists.
 
 At the current audit snapshot:
 
-- `npm test` passed the 11 core regression cases;
+- `npm test` passed 12 core and Chromium regression cases;
 - `npm run lint` passed;
 - non-incremental TypeScript checks passed for browser, CLI, and Node configs;
 - Web and CLI builds passed; the Web build retained its existing large-chunk
   warning;
-- the Git working tree was clean;
-- the manual Chromium checks recorded in `PROJECT_STATUS.md` passed.
+- the source diff check passed;
+- the automated Chromium session, sample-flow, and request-race checks passed.

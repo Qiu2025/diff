@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   PDFDropZone,
   DiffView,
@@ -27,6 +27,7 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
   const [currentPage, setCurrentPage] = useState(1);
   const [showAllPages, setShowAllPages] = useState(false);
+  const activeRequest = useRef<{ controller: AbortController } | null>(null);
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = localStorage.getItem('pdf-diff-theme') as Theme;
     return savedTheme || 'system';
@@ -37,35 +38,62 @@ function App() {
     localStorage.setItem('pdf-diff-theme', theme);
   }, [theme]);
 
+  useEffect(() => () => activeRequest.current?.controller.abort(), []);
+
+  const beginRequest = useCallback(() => {
+    activeRequest.current?.controller.abort();
+    const request = { controller: new AbortController() };
+    activeRequest.current = request;
+    setIsProcessing(true);
+    return request;
+  }, []);
+
+  const finishRequest = useCallback((request: { controller: AbortController }) => {
+    if (activeRequest.current !== request) return;
+    activeRequest.current = null;
+    setIsProcessing(false);
+  }, []);
+
   const handleOriginalFile = useCallback(async (file: File) => {
+    const request = beginRequest();
     setOriginalFile(file);
+    setOriginalDoc(null);
     setError(null);
     try {
-      setIsProcessing(true);
-      const doc = await extractTextFromPDF(file);
+      const doc = await extractTextFromPDF(file, request.controller.signal);
+      if (activeRequest.current !== request) return;
       setOriginalDoc(doc);
     } catch {
-      setError('Failed to process the original PDF. Please try another file.');
+      if (activeRequest.current === request) {
+        setError('Failed to process the original PDF. Please try another file.');
+      }
     } finally {
-      setIsProcessing(false);
+      finishRequest(request);
     }
-  }, []);
+  }, [beginRequest, finishRequest]);
 
   const handleModifiedFile = useCallback(async (file: File) => {
+    const request = beginRequest();
     setModifiedFile(file);
+    setModifiedDoc(null);
     setError(null);
     try {
-      setIsProcessing(true);
-      const doc = await extractTextFromPDF(file);
+      const doc = await extractTextFromPDF(file, request.controller.signal);
+      if (activeRequest.current !== request) return;
       setModifiedDoc(doc);
     } catch {
-      setError('Failed to process the modified PDF. Please try another file.');
+      if (activeRequest.current === request) {
+        setError('Failed to process the modified PDF. Please try another file.');
+      }
     } finally {
-      setIsProcessing(false);
+      finishRequest(request);
     }
-  }, []);
+  }, [beginRequest, finishRequest]);
 
   const handleReset = useCallback(() => {
+    activeRequest.current?.controller.abort();
+    activeRequest.current = null;
+    setIsProcessing(false);
     setOriginalFile(null);
     setModifiedFile(null);
     setOriginalDoc(null);
@@ -75,14 +103,16 @@ function App() {
   }, []);
 
   const handleTryDemo = useCallback(async () => {
+    const request = beginRequest();
     try {
-      setIsProcessing(true);
       setError(null);
+      setOriginalDoc(null);
+      setModifiedDoc(null);
       
       // Fetch demo PDFs
       const [originalResponse, modifiedResponse] = await Promise.all([
-        fetch('/demo-original.pdf'),
-        fetch('/demo-modified.pdf')
+        fetch('/demo-original.pdf', { signal: request.controller.signal }),
+        fetch('/demo-modified.pdf', { signal: request.controller.signal })
       ]);
       
       const [originalBlob, modifiedBlob] = await Promise.all([
@@ -95,23 +125,27 @@ function App() {
       const modifiedFile = new File([modifiedBlob], 'demo-modified.pdf', { type: 'application/pdf' });
       
       // Set files
+      if (activeRequest.current !== request) return;
       setOriginalFile(originalFile);
       setModifiedFile(modifiedFile);
       
       // Process PDFs
       const [originalDoc, modifiedDoc] = await Promise.all([
-        extractTextFromPDF(originalFile),
-        extractTextFromPDF(modifiedFile)
+        extractTextFromPDF(originalFile, request.controller.signal),
+        extractTextFromPDF(modifiedFile, request.controller.signal)
       ]);
       
+      if (activeRequest.current !== request) return;
       setOriginalDoc(originalDoc);
       setModifiedDoc(modifiedDoc);
     } catch {
-      setError('Failed to load demo PDFs. Please try again.');
+      if (activeRequest.current === request) {
+        setError('Failed to load demo PDFs. Please try again.');
+      }
     } finally {
-      setIsProcessing(false);
+      finishRequest(request);
     }
-  }, []);
+  }, [beginRequest, finishRequest]);
 
   const comparisonResult = useMemo(
     () => originalDoc && modifiedDoc ? compareDocuments(originalDoc, modifiedDoc) : null,
@@ -199,7 +233,7 @@ function App() {
             <div className="upload-footer">
               <span>PDF files · text comparison · no upload</span>
               {(originalFile || modifiedFile) && (
-                <button type="button" className="reset-btn" onClick={handleReset} disabled={isProcessing}>
+                <button type="button" className="reset-btn" onClick={handleReset}>
                   Clear both files
                 </button>
               )}
