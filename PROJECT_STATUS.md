@@ -40,7 +40,8 @@ Keep this file current and concise. Durable product decisions belong in
 | Visual view | The Visual tab renders the current page pair, offers the aligned and exact engines with marked-up and plain layouts, outlines changed areas, and reconciles the text verdict with the pixel verdict in words | Automated in Chromium | `c7e1896`, current working tree |
 | Reflow-aware comparison | Renders are segmented into content bands, matched between versions, and compared where each band actually sits; bands are reported as equal, moved, changed, added, or removed | Automated, plus a Chromium check on the reflow fixture | `a0c77cf` |
 | Fixture corpus | Deterministic reflow, image-only/scanned, Letter/A4, landscape, and truncated fixtures in `tests/fixtures/` | Automated | `a2d03df` |
-| Per-side request lifecycle | Each document owns its own request identity, so choosing the second file no longer cancels the first | Automated in Chromium | Current working tree |
+| Per-side request lifecycle | Each document owns its own request identity, so choosing the second file no longer cancels the first | Automated in Chromium | `e718055` |
+| Comparison worker | Band segmentation and pixel comparison run in one application worker; rasters and masks cross as transferable buffers, cancellation discards the worker, and an inline fallback covers runtimes without workers | Automated in Chromium, including a frame-count check that fails when the work runs inline | Current working tree |
 
 `src/cli/diffUtils.ts` re-exports the shared core; it is not a second diff
 implementation. The browser text-only path currently opens a session, extracts
@@ -49,7 +50,7 @@ open PDF after extraction until visual comparison has a real consumer.
 
 ## Regression coverage
 
-`npm test` currently runs 47 cases across the core and browser regression files:
+`npm test` currently runs 48 cases across the core and browser regression files:
 
 | Behavior | Coverage |
 | --- | --- |
@@ -74,6 +75,7 @@ open PDF after extraction until visual comparison has a real consumer.
 | Image-only page: indeterminate for text, decided by the visual layer | Automated for text; automated in Chromium for pixels |
 | Letter/A4, landscape, and truncated fixtures | Automated |
 | Choosing both documents without waiting for the first | Automated in Chromium |
+| The UI thread keeps painting during a comparison, and a cancelled job does not break later ones | Automated in Chromium |
 | Sample-file browser comparison flow | Automated in Chromium |
 | React upload/replacement/race behavior | Automated in Chromium for replacement and reset races |
 | Browser PDF export file contents/layout | Not automated |
@@ -91,7 +93,8 @@ bugs, especially for arbitrary PDF producers and layouts.
 - Page and line alignment use quadratic dynamic programming without a large
   document budget.
 - Text comparison still runs synchronously from React and materializes the
-  complete result for all pages.
+  complete result for all pages. Visual comparison does not: it runs in one
+  application worker.
 - `App.tsx` uses one active request identity/controller so replacement, demo,
   and reset operations cancel and invalidate stale extraction results.
 - Visual comparison exists for one page pair at a time in the browser only. It
@@ -111,11 +114,10 @@ bugs, especially for arbitrary PDF producers and layouts.
 
 ## Next work, in priority order
 
-1. **Move visual comparison off the UI thread and give it a budget.** One page
-   pair takes roughly half a second at ~150 DPI, all of it synchronous inside
-   the render loop. One application worker plus explicit pixel budgets is the
-   prerequisite for whole-document visual review and for visual evidence in
-   exports.
+1. **Extend visual review beyond one page pair.** The worker and the render
+   budget are in place; what is missing is a job that walks the page pairs with
+   bounded concurrency, plus a way to carry visual evidence into the exported
+   report. Rendering and PNG encoding still run on the UI thread.
 2. **Continue expanding the corpus.** Still missing: true `/Rotate` pages,
    multi-column text, CJK/RTL, ligatures, encrypted files, and large documents.
 3. **Detect columns before banding.** Horizontal bands attribute a change in one
@@ -131,10 +133,10 @@ foundations remain unfinished.
 
 ## Latest verification
 
-Verified on 2026-09-10 against the current working tree after `a0c77cf`:
+Verified on 2026-09-10 against the current working tree after `e718055`:
 
 ```text
-npm test                                                        passed (47 cases, including Chromium)
+npm test                                                        passed (48 cases, including Chromium)
 npm run lint                                                    passed
 ./node_modules/.bin/tsc -p tsconfig.app.json --noEmit --incremental false   passed
 ./node_modules/.bin/tsc -p tsconfig.cli.json --noEmit --incremental false   passed
@@ -165,9 +167,11 @@ Automated Chromium coverage now verifies:
   stranding the first selection.
 
 Measured in Chromium on the reflow fixture at ~151 DPI (1247×1763): the exact
-comparison reports 49,253 changed pixels, the aligned comparison 6,110. One
-aligned comparison of a page pair took roughly 480 ms against 305 ms for the
-exact one; both run on the UI thread.
+comparison reports 49,253 changed pixels, the aligned comparison 6,110.
+
+Comparison of one 1250×1767 page pair takes about 200 ms. Run inline it painted
+0 animation frames in that time; run in the worker it painted 14, about 67 fps.
+Page rendering and PNG encoding still happen on the UI thread.
 
 Browser tests launch Chromium through `tests/helpers/browser.ts`, which honours
 `PDF_DIFF_CHROMIUM_EXECUTABLE` for environments that ship a preinstalled

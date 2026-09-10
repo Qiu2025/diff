@@ -235,3 +235,105 @@ test('reflow-aware comparison separates edits from displacement', async t => {
 
   assert.deepEqual(browserErrors, []);
 });
+
+test('comparison runs off the UI thread and survives cancellation', async t => {
+  const server = await startDevServer();
+  t.after(() => server.close());
+
+  const browser = await launchChromium();
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  const browserErrors: string[] = [];
+  page.on('pageerror', error => browserErrors.push(error.message));
+  page.on('console', message => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+
+  await page.goto(server.baseUrl);
+
+  const result = await page.evaluate(async () => {
+    const { openPdfSession } = await import('/src/utils/pdfUtils.ts');
+    const { runVisualComparison } = await import('/src/utils/visualWorkerClient.ts');
+
+    const load = async (name: string) => {
+      const response = await fetch(`/tests/fixtures/${name}.pdf`);
+      return openPdfSession(new File([await response.blob()], `${name}.pdf`, {
+        type: 'application/pdf',
+      }));
+    };
+    const render = async (session: Awaited<ReturnType<typeof openPdfSession>>) => {
+      const canvas = document.createElement('canvas');
+      await session.renderPageToCanvas(1, canvas, 2);
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) throw new Error('no canvas context');
+      const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+      const raster = { width: canvas.width, height: canvas.height, data };
+      canvas.width = 0;
+      canvas.height = 0;
+      return raster;
+    };
+
+    const originalSession = await load('reflow-original');
+    const modifiedSession = await load('reflow-modified');
+
+    try {
+      const original = await render(originalSession);
+      const modified = await render(modifiedSession);
+      const job = { mode: 'aligned' as const, original, modified, options: {} };
+
+      // Warm the worker so its startup is not measured.
+      await runVisualComparison(job);
+
+      let frames = 0;
+      let running = true;
+      const tick = () => {
+        if (!running) return;
+        frames += 1;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      const started = performance.now();
+      const outcome = await runVisualComparison(job);
+      const elapsed = performance.now() - started;
+      running = false;
+
+      // Cancelling discards the worker; the next job has to bring it back.
+      const aborter = new AbortController();
+      const cancelled = runVisualComparison({ ...job, signal: aborter.signal });
+      aborter.abort();
+      const abortName = await cancelled.then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof Error ? error.name : String(error))
+      );
+      const afterCancel = await runVisualComparison(job);
+
+      return {
+        frames,
+        elapsed,
+        mode: outcome.mode,
+        status: outcome.diff.status,
+        abortName,
+        recoveredStatus: afterCancel.diff.status,
+        recoveredMode: afterCancel.mode,
+      };
+    } finally {
+      await originalSession.destroy();
+      await modifiedSession.destroy();
+    }
+  });
+
+  assert.equal(result.mode, 'aligned');
+  assert.equal(result.status, 'different');
+  assert.ok(result.elapsed > 20, `the comparison took ${result.elapsed}ms, too fast to judge`);
+  assert.ok(
+    result.frames >= 3,
+    `only ${result.frames} frames were painted during a ${Math.round(result.elapsed)}ms comparison; `
+      + 'the UI thread appears to be blocked'
+  );
+
+  assert.equal(result.abortName, 'AbortError');
+  assert.equal(result.recoveredMode, 'aligned');
+  assert.equal(result.recoveredStatus, 'different', 'a cancelled job must not break later ones');
+
+  assert.deepEqual(browserErrors, []);
+});

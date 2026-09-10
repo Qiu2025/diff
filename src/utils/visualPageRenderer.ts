@@ -12,6 +12,7 @@ import { compareRasters, withDiagnostic, VISUAL_MASK } from './visualDiff.ts';
 import type { RasterImage, VisualDiffOptions, VisualPageDiff } from './visualDiff.ts';
 import { compareAlignedRasters } from './visualBands.ts';
 import type { AlignedPageDiff, BandOptions } from './visualBands.ts';
+import { runVisualComparison } from './visualWorkerClient.ts';
 import type { PageSize, PdfSession } from './pdfUtils';
 
 export interface PageRenderSource {
@@ -301,9 +302,15 @@ export async function compareRenderedPages(
 
     const originalRaster = originalCanvas ? readRaster(originalCanvas) : null;
     const modifiedRaster = modifiedCanvas ? readRaster(modifiedCanvas) : null;
-    let diff: VisualPageDiff | AlignedPageDiff = mode === 'exact'
-      ? compareRasters(originalRaster, modifiedRaster, { ...diffOptions, includeMask: true })
-      : compareAlignedRasters(originalRaster, modifiedRaster, { ...diffOptions, includeMasks: true });
+    const outcome = await runVisualComparison({
+      mode,
+      original: originalRaster,
+      modified: modifiedRaster,
+      options: diffOptions ?? {},
+      signal,
+    });
+    throwIfAborted(signal);
+    let diff: VisualPageDiff | AlignedPageDiff = outcome.diff;
 
     if (
       originalSize && modifiedSize && (

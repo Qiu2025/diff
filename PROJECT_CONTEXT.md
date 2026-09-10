@@ -117,7 +117,8 @@ Visual comparison runs as a separate, on-demand path:
 PdfSession (both sides)
   -> getPageSize() to plan one shared render scale within a pixel budget
   -> render both pages into one raster size
-  -> compareAlignedRasters()   band segmentation, matching, per-band comparison
+  -> the comparison worker
+     compareAlignedRasters()   band segmentation, matching, per-band comparison
      or compareRasters()       exact, position by position
   -> status, changed pixels, bands, regions, per-pixel masks
   -> overlay canvas per side -> object URLs -> React
@@ -194,9 +195,10 @@ as one.
 comparison phase has no cancellation, timeout, maximum edit complexity, or
 text-item budget.
 
-Visual comparison is the exception: it runs asynchronously for one page pair,
-is cancellable, and has an explicit rendered-pixel budget. Whole-document
-visual analysis stays unavailable until the same budgeting covers it.
+Visual comparison is the exception: it runs in one application worker for one
+page pair at a time, is cancellable, and has an explicit rendered-pixel budget.
+Page rendering and PNG encoding still happen on the UI thread. Whole-document
+visual analysis stays unavailable until a bounded multi-page job exists.
 
 "Review all pages" retains every page's original text, modified text, diff
 parts, and statistics, then mounts all page details in the DOM.
