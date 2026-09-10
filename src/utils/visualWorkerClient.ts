@@ -137,8 +137,14 @@ export function runVisualComparison(job: VisualComparisonJob): Promise<VisualCom
     const onAbort = () => {
       pending.delete(id);
       // A running comparison cannot be interrupted, so the worker is discarded
-      // rather than left to finish work nobody wants.
-      disposeWorker(abortError(signal as AbortSignal));
+      // rather than left to finish work nobody wants — but only once nothing
+      // else is waiting on it. Two comparisons can be in flight at the same
+      // time (a page view and a whole-document sweep), and cancelling one must
+      // not fail the other.
+      if (pending.size === 0) {
+        worker?.terminate();
+        worker = null;
+      }
       reject(abortError(signal as AbortSignal));
     };
 

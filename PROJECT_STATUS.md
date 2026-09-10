@@ -80,7 +80,7 @@ open PDF after extraction until visual comparison has a real consumer.
 | Image-only page: indeterminate for text, decided by the visual layer | Automated for text; automated in Chromium for pixels |
 | Letter/A4, landscape, and truncated fixtures | Automated |
 | Choosing both documents without waiting for the first | Automated in Chromium |
-| The UI thread keeps painting during a comparison, and a cancelled job does not break later ones | Automated in Chromium |
+| The UI thread keeps painting during a comparison; a cancelled job breaks neither later jobs nor another comparison already in flight | Automated in Chromium |
 | Whole-document scan verdicts, including an image-only document the text layer cannot read; scan state resets with new documents; a row selects its page | Automated in Chromium |
 | Exported report contents: text-only without a scan, visual verdicts and evidence pages with one, read back out of the produced PDF | Automated in Chromium |
 | OCR target selection, merging recognized pages, and provenance | Automated |

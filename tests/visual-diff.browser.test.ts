@@ -307,6 +307,21 @@ test('comparison runs off the UI thread and survives cancellation', async t => {
       );
       const afterCancel = await runVisualComparison(job);
 
+      // Two comparisons can be in flight at once — a page view and a
+      // whole-document sweep. Cancelling one must not fail the other.
+      const survivorAborter = new AbortController();
+      const survivor = runVisualComparison(job);
+      const doomed = runVisualComparison({ ...job, signal: survivorAborter.signal });
+      survivorAborter.abort();
+      const doomedName = await doomed.then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof Error ? error.name : String(error))
+      );
+      const survivorOutcome = await survivor.then(
+        result => result.diff.status,
+        (error: unknown) => `failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+
       return {
         frames,
         elapsed,
@@ -315,6 +330,8 @@ test('comparison runs off the UI thread and survives cancellation', async t => {
         abortName,
         recoveredStatus: afterCancel.diff.status,
         recoveredMode: afterCancel.mode,
+        doomedName,
+        survivorOutcome,
       };
     } finally {
       await originalSession.destroy();
@@ -334,6 +351,12 @@ test('comparison runs off the UI thread and survives cancellation', async t => {
   assert.equal(result.abortName, 'AbortError');
   assert.equal(result.recoveredMode, 'aligned');
   assert.equal(result.recoveredStatus, 'different', 'a cancelled job must not break later ones');
+  assert.equal(result.doomedName, 'AbortError');
+  assert.equal(
+    result.survivorOutcome,
+    'different',
+    'cancelling one comparison must not fail another that is already in flight'
+  );
 
   assert.deepEqual(browserErrors, []);
 });
