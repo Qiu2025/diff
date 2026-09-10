@@ -12,6 +12,8 @@ interface VisualScanProps {
   pairs: readonly (ScanPagePair & { textStatus: ComparisonStatus })[];
   currentComparison: number;
   onSelectPage: (comparisonNumber: number) => void;
+  /** Reports the finished scan, or null when it is discarded. */
+  onResult: (result: VisualScanResult | null) => void;
 }
 
 interface ScanState {
@@ -53,6 +55,7 @@ export function VisualScan({
   pairs,
   currentComparison,
   onSelectPage,
+  onResult,
 }: VisualScanProps) {
   const [state, setState] = useState<ScanState>(IDLE);
   const controller = useRef<AbortController | null>(null);
@@ -67,7 +70,8 @@ export function VisualScan({
   useEffect(() => {
     cancel();
     setState(IDLE);
-  }, [cancel, originalSession, modifiedSession]);
+    onResult(null);
+  }, [cancel, onResult, originalSession, modifiedSession]);
 
   const run = useCallback(async () => {
     cancel();
@@ -90,6 +94,7 @@ export function VisualScan({
       });
       if (controller.current !== own) return;
       setState({ phase: 'done', completed: pairs.length, total: pairs.length, result });
+      onResult(result);
     } catch (error) {
       if (controller.current !== own || own.signal.aborted) return;
       setState({
@@ -102,7 +107,7 @@ export function VisualScan({
     } finally {
       if (controller.current === own) controller.current = null;
     }
-  }, [cancel, modifiedSession, originalSession, pairs]);
+  }, [cancel, modifiedSession, onResult, originalSession, pairs]);
 
   return (
     <section className="visual-scan" aria-labelledby="visual-scan-title">

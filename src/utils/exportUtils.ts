@@ -1,7 +1,32 @@
 import jsPDF from 'jspdf';
 import type { ComparisonResult } from './diffUtils';
+import { describeScanSummary } from './visualScan';
+import type { VisualScanResult } from './visualScan';
+import type { VisualEvidence } from './visualEvidence';
 
-export function exportDiffToPDF(result: ComparisonResult): void {
+export interface VisualExportSection {
+  scan: VisualScanResult;
+  evidence?: VisualEvidence | null;
+}
+
+const VISUAL_STATUS_LABELS = {
+  equal: 'Same',
+  different: 'Changed',
+  indeterminate: 'Unknown',
+} as const;
+
+function describeScanRow(page: VisualScanResult['pages'][number]): string {
+  if (!page.bandCounts) return page.error ?? 'Not compared';
+  const { added, removed, changed, moved } = page.bandCounts;
+  const parts: string[] = [];
+  if (added) parts.push(`+${added}`);
+  if (removed) parts.push(`-${removed}`);
+  if (changed) parts.push(`~${changed}`);
+  if (parts.length === 0) return moved > 0 ? 'moved only' : 'no change';
+  return `${parts.join(' ')} lines${moved ? `, ${moved} moved` : ''}`;
+}
+
+export function exportDiffToPDF(result: ComparisonResult, visual?: VisualExportSection): void {
   const { documents, pageDiffs, overallStats, status } = result;
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -94,9 +119,116 @@ export function exportDiffToPDF(result: ComparisonResult): void {
   
   yPosition += 28;
 
+  // Visual comparison: separate evidence, reported separately.
+  if (visual) {
+    checkPageBreak(30);
+    doc.setFontSize(14);
+    doc.setTextColor(50, 50, 50);
+    doc.text('Visual Comparison', margin, yPosition);
+    yPosition += 7;
+
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(describeScanSummary(visual.scan), margin, yPosition);
+    yPosition += 5;
+    if (visual.scan.scale > 0) {
+      doc.text(
+        `Pages compared as rendered at approximately ${Math.round(visual.scan.scale * 72)} DPI.`,
+        margin,
+        yPosition
+      );
+      yPosition += 5;
+    }
+    doc.text(
+      'This is independent of the text comparison below. A page can differ visually '
+        + 'while its text is identical, and the reverse.',
+      margin,
+      yPosition,
+      { maxWidth }
+    );
+    yPosition += 9;
+
+    for (const page of visual.scan.pages) {
+      checkPageBreak(7);
+      doc.setFontSize(9);
+      if (page.status === 'different') doc.setTextColor(185, 28, 28);
+      else if (page.status === 'equal') doc.setTextColor(21, 128, 61);
+      else doc.setTextColor(161, 98, 7);
+      doc.text(VISUAL_STATUS_LABELS[page.status], margin, yPosition);
+      doc.setTextColor(50, 50, 50);
+      doc.text(page.label, margin + 22, yPosition);
+      doc.setTextColor(120, 120, 120);
+      doc.text(describeScanRow(page), margin + 85, yPosition);
+      yPosition += 5.5;
+    }
+    yPosition += 6;
+
+    // Evidence pages are landscape: two portrait page renders side by side fit
+    // a landscape sheet far better than a portrait one.
+    for (const page of visual.evidence?.pages ?? []) {
+      if (!page.original && !page.modified) continue;
+      doc.addPage('a4', 'landscape');
+      const sheetWidth = doc.internal.pageSize.getWidth();
+      const sheetHeight = doc.internal.pageSize.getHeight();
+      const sheetContentWidth = sheetWidth - 2 * margin;
+      yPosition = margin;
+
+      doc.setFontSize(12);
+      doc.setTextColor(50, 50, 50);
+      doc.text(page.label, margin, yPosition);
+      yPosition += 6;
+      doc.setFontSize(9);
+      doc.setTextColor(120, 120, 120);
+      doc.text(page.summary, margin, yPosition, { maxWidth: sheetContentWidth });
+      yPosition += 8;
+
+      const columnWidth = (sheetContentWidth - 8) / 2;
+      const availableHeight = sheetHeight - margin - yPosition - 8;
+      const images: [string, string | null][] = [
+        ['Original', page.original],
+        ['Modified', page.modified],
+      ];
+
+      images.forEach(([caption, image], index) => {
+        const x = margin + index * (columnWidth + 8);
+        doc.setFontSize(8);
+        doc.setTextColor(120, 120, 120);
+        doc.text(caption, x, yPosition);
+        if (!image) return;
+        const properties = doc.getImageProperties(image);
+        const ratio = properties.height / properties.width;
+        const width = Math.min(columnWidth, availableHeight / ratio);
+        doc.addImage(image, 'JPEG', x, yPosition + 3, width, width * ratio);
+      });
+
+      yPosition = sheetHeight - margin;
+    }
+
+    if (visual.evidence && visual.evidence.omitted > 0) {
+      doc.addPage();
+      yPosition = margin;
+      doc.setFontSize(9);
+      doc.setTextColor(161, 98, 7);
+      doc.text(
+        `${visual.evidence.omitted} further changed page${
+          visual.evidence.omitted === 1 ? ' was' : 's were'} not illustrated in this report.`,
+        margin,
+        yPosition,
+        { maxWidth }
+      );
+      yPosition += 8;
+    }
+
+    doc.addPage();
+    yPosition = margin;
+  }
+
   // Diff content for all pages
   doc.setFontSize(14);
-  
+  doc.setTextColor(50, 50, 50);
+  doc.text('Text Comparison', margin, yPosition);
+  yPosition += 9;
+
   for (const { label, parts, status: pageStatus } of pageDiffs) {
     checkPageBreak(20);
     

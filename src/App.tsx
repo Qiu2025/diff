@@ -20,7 +20,7 @@ import type { LoadedPdf } from './hooks/usePdfSlot';
 type PdfSide = 'original' | 'modified';
 type PdfRequest = { controller: AbortController };
 import { compareDocuments } from './utils/diffUtils';
-import { exportDiffToPDF } from './utils/exportUtils';
+import type { VisualScanResult } from './utils/visualScan';
 import './App.css';
 
 function App() {
@@ -33,6 +33,8 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
   const [currentPage, setCurrentPage] = useState(1);
   const [showAllPages, setShowAllPages] = useState(false);
+  const [visualScan, setVisualScan] = useState<VisualScanResult | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   // One request identity per side: replacing the original must not cancel work
   // already under way on the modified document.
   const activeRequests = useRef<Record<PdfSide, PdfRequest | null>>({
@@ -159,6 +161,7 @@ function App() {
     adoptModified(null);
     setError(null);
     setCurrentPage(1);
+    setVisualScan(null);
   }, [abortSide, adoptOriginal, adoptModified]);
 
   const handleTryDemo = useCallback(async () => {
@@ -231,9 +234,40 @@ function App() {
     if (totalPages > 0 && currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
-  const handleExport = useCallback(() => {
-    if (comparisonResult) exportDiffToPDF(comparisonResult);
-  }, [comparisonResult]);
+  /**
+   * Exports the report, including visual evidence when a scan has been run.
+   *
+   * The export path is loaded on demand: jsPDF and the evidence renderer are
+   * large, and most sessions never export.
+   */
+  const handleExport = useCallback(async () => {
+    if (!comparisonResult) return;
+    setIsExporting(true);
+    try {
+      const { exportDiffToPDF } = await import('./utils/exportUtils');
+      if (!visualScan) {
+        exportDiffToPDF(comparisonResult);
+        return;
+      }
+
+      const { buildVisualEvidence } = await import('./utils/visualEvidence');
+      let evidence = null;
+      try {
+        evidence = await buildVisualEvidence({
+          original: original?.session ?? null,
+          modified: modified?.session ?? null,
+          pairs: scanPairs,
+          scan: visualScan,
+        });
+      } catch {
+        // Losing the illustrations must not cost the reader the verdicts.
+        evidence = null;
+      }
+      exportDiffToPDF(comparisonResult, { scan: visualScan, evidence });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [comparisonResult, modified, original, scanPairs, visualScan]);
 
   const isProcessing = busy.original || busy.modified;
   const showComparison = comparisonResult !== null;
@@ -330,7 +364,11 @@ function App() {
               </div>
               <div className="comparison-actions">
                 <ViewModeTabs activeMode={viewMode} onModeChange={setViewMode} />
-                <ExportButton onClick={handleExport} disabled={!comparisonResult} />
+                <ExportButton
+                  onClick={handleExport}
+                  disabled={!comparisonResult || isExporting}
+                  busy={isExporting}
+                />
               </div>
             </div>
 
@@ -377,6 +415,7 @@ function App() {
                     pairs={scanPairs}
                     currentComparison={currentPageDiff.pageNumber}
                     onSelectPage={setCurrentPage}
+                    onResult={setVisualScan}
                   />
                   <VisualDiffView
                     originalSession={original?.session ?? null}

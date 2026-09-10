@@ -137,7 +137,7 @@ test('the whole-document scan gives every page a verdict', async t => {
   await page.getByRole('heading', { name: 'Comparison results' }).waitFor();
   await page.getByRole('button', { name: 'Visual' }).click();
   await page.getByRole('button', { name: 'Scan all pages' }).click();
-  await page.getByText('1 of 1 page render differently').waitFor({ timeout: 60_000 });
+  await page.getByText('1 of 1 page renders differently').waitFor({ timeout: 60_000 });
 
   const scannedRow = page.locator('.visual-scan-row').first();
   assert.match(await scannedRow.textContent() ?? '', /^Changed/);

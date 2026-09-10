@@ -1,6 +1,6 @@
 # PDF Diff Project Status
 
-> Last updated: 2026-09-10. Implementation baseline: `b6fab9f` plus the working tree.
+> Last updated: 2026-09-10. Implementation baseline: `e79ee88` plus the working tree.
 >
 > This is the live implementation and verification ledger. Read
 > [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) for the product direction and
@@ -42,7 +42,9 @@ Keep this file current and concise. Durable product decisions belong in
 | Fixture corpus | Deterministic reflow, image-only/scanned, Letter/A4, landscape, and truncated fixtures in `tests/fixtures/` | Automated | `a2d03df` |
 | Per-side request lifecycle | Each document owns its own request identity, so choosing the second file no longer cancels the first | Automated in Chromium | `e718055` |
 | Comparison worker | Band segmentation and pixel comparison run in one application worker; rasters and masks cross as transferable buffers, cancellation discards the worker, and an inline fallback covers runtimes without workers | Automated in Chromium, including a frame-count check that fails when the work runs inline | `b6fab9f` |
-| Whole-document visual scan | Every page pair is swept sequentially at a reduced budget with progress and cancellation, giving each pair a visual verdict next to its text verdict; rows link to the full-resolution comparison | Automated in Chromium on the image-only fixture and the demo | Current working tree |
+| Whole-document visual scan | Every page pair is swept sequentially at a reduced budget with progress and cancellation, giving each pair a visual verdict next to its text verdict; rows link to the full-resolution comparison | Automated in Chromium on the image-only fixture and the demo | `e79ee88` |
+| Visual evidence in the export | A completed scan adds a visual section to the exported PDF: per-page verdicts plus landscape pages of marked-up renders for up to six changed pages, capped and announced when truncated | Automated in Chromium, including reading the produced PDF back | Current working tree |
+| On-demand export loading | jsPDF and the evidence renderer load only when the user exports | Automated indirectly by the export test; bundle sizes recorded below | Current working tree |
 
 `src/cli/diffUtils.ts` re-exports the shared core; it is not a second diff
 implementation. The browser text-only path currently opens a session, extracts
@@ -51,7 +53,7 @@ open PDF after extraction until visual comparison has a real consumer.
 
 ## Regression coverage
 
-`npm test` currently runs 49 cases across the core and browser regression files:
+`npm test` currently runs 50 cases across the core and browser regression files:
 
 | Behavior | Coverage |
 | --- | --- |
@@ -78,9 +80,10 @@ open PDF after extraction until visual comparison has a real consumer.
 | Choosing both documents without waiting for the first | Automated in Chromium |
 | The UI thread keeps painting during a comparison, and a cancelled job does not break later ones | Automated in Chromium |
 | Whole-document scan verdicts, including an image-only document the text layer cannot read; scan state resets with new documents; a row selects its page | Automated in Chromium |
+| Exported report contents: text-only without a scan, visual verdicts and evidence pages with one, read back out of the produced PDF | Automated in Chromium |
 | Sample-file browser comparison flow | Automated in Chromium |
 | React upload/replacement/race behavior | Automated in Chromium for replacement and reset races |
-| Browser PDF export file contents/layout | Not automated |
+| Browser PDF export file contents/layout | Automated in Chromium: the produced PDF is parsed back and its sections asserted |
 | CLI process exit codes and full report generation | Manually smoke-tested, not automated |
 | Large, scanned, multilingual, rotated, damaged, or encrypted PDFs | Not covered by the regression corpus |
 
@@ -99,9 +102,10 @@ bugs, especially for arbitrary PDF producers and layouts.
   application worker.
 - `App.tsx` uses one active request identity/controller so replacement, demo,
   and reset operations cancel and invalidate stale extraction results.
-- Visual comparison is browser-only. It is not part of `ComparisonResult`, not
-  available in the CLI, and not included in any export. The whole-document scan
-  produces verdicts but they are not persisted with the comparison result.
+- Visual comparison is browser-only. It is not part of `ComparisonResult` and
+  not available in the CLI. It does reach the browser PDF export, but only when
+  the user has run a scan first, and the verdicts are not persisted with the
+  comparison result.
 - Pixel comparison models vertical reflow only. A line whose content shifts
   sideways is reported as edited rather than moved, which is conservative but
   can overstate an edit. The exact engine remains available and makes no
@@ -112,15 +116,13 @@ bugs, especially for arbitrary PDF producers and layouts.
 - Structural and OCR analysis do not exist yet. Textless pages are correctly
   reported as indeterminate by the text layer instead of being guessed equal,
   and the visual layer can now decide such pages.
-- The production bundle still reports a chunk larger than 500 kB.
+- The production bundle still reports a chunk larger than 500 kB, though the
+  entry chunk fell from 975 kB to 590 kB once the export path became a dynamic
+  import.
 
 ## Next work, in priority order
 
-1. **Carry visual evidence into the exported report.** The scan produces
-   per-page verdicts and the page view produces marked-up renders; neither
-   reaches the PDF or HTML export, so a reviewer cannot hand the result to
-   anyone. Rendering and PNG encoding also still run on the UI thread.
-2. **Continue expanding the corpus.** Still missing: true `/Rotate` pages,
+1. **Continue expanding the corpus.** Still missing: true `/Rotate` pages,
    multi-column text, CJK/RTL, ligatures, encrypted files, and large documents.
 3. **Detect columns before banding.** Horizontal bands attribute a change in one
    column to the whole row, which is the main remaining source of noise on real
@@ -135,10 +137,10 @@ foundations remain unfinished.
 
 ## Latest verification
 
-Verified on 2026-09-10 against the current working tree after `b6fab9f`:
+Verified on 2026-09-10 against the current working tree after `e79ee88`:
 
 ```text
-npm test                                                        passed (49 cases, including Chromium)
+npm test                                                        passed (50 cases, including Chromium)
 npm run lint                                                    passed
 ./node_modules/.bin/tsc -p tsconfig.app.json --noEmit --incremental false   passed
 ./node_modules/.bin/tsc -p tsconfig.cli.json --noEmit --incremental false   passed
@@ -184,7 +186,9 @@ Browser tests launch Chromium through `tests/helpers/browser.ts`, which honours
 `PDF_DIFF_CHROMIUM_EXECUTABLE` for environments that ship a preinstalled
 browser build.
 
-Browser PDF export contents and layout were not manually rechecked in this
-task, and the export still contains no visual evidence. The visual view was
-checked manually in Chromium in light and dark themes. The Web build passed
-with the existing large-chunk warning.
+Browser PDF export contents are now asserted automatically: the produced file
+is parsed back and checked for the visual and text sections. An exported report
+for the reflow fixture was also rendered and inspected manually. The visual view
+was checked manually in Chromium in light and dark themes. The Web build passed
+with the existing large-chunk warning; the entry chunk is 590 kB (180 kB gzip),
+down from 975 kB, with the export path split into its own chunk.

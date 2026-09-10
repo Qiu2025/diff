@@ -203,6 +203,12 @@ A whole-document sweep runs the same engine over every page pair, one at a time,
 at a lower render budget and with images turned off. It answers "which pages
 changed" — the question the text layer cannot answer for a scanned document.
 
+When a sweep has been run, the browser PDF export carries its verdicts and, for
+a capped number of changed pages, landscape sheets of the marked-up renders.
+Evidence images are encoded as lossy data URLs: a report has to carry its bytes,
+and a reviewer needs to see which line changed, not to re-read the document from
+the report.
+
 "Review all pages" retains every page's original text, modified text, diff
 parts, and statistics, then mounts all page details in the DOM.
 
@@ -408,8 +414,8 @@ cheap to decide when a concrete runtime or deployment requirement exists.
 
 ## Known small correctness and maintenance issues
 
-- Browser export is statically imported and contributes to the initial feature
-  graph even when no export is requested.
+- Browser export and the evidence renderer are dynamic imports, so jsPDF stays
+  out of the initial feature graph.
 - The Docker build uses `npm install`, and the repository has no `.dockerignore`.
 - Nginx currently has no CSP or explicit cross-origin isolation headers.
 - The manifest exists without a service worker, so the project is not an

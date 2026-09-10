@@ -22,6 +22,15 @@ export interface PageRenderSource {
 
 export type VisualMode = 'aligned' | 'exact';
 
+export interface ImageEncoding {
+  /** MIME type passed to the canvas encoder. */
+  format?: 'image/png' | 'image/jpeg' | 'image/webp';
+  /** Lossy-format quality, 0..1. */
+  quality?: number;
+  /** `object-url` keeps bytes off the heap; `data-url` embeds them. */
+  encoding?: 'object-url' | 'data-url';
+}
+
 export interface VisualPageImages {
   /** Plain render of each side. */
   original: string | null;
@@ -56,11 +65,11 @@ export interface RenderComparisonOptions {
   maxScale?: number;
   signal?: AbortSignal;
   /**
-   * Produce page and overlay images. A whole-document sweep only needs the
-   * verdicts, and PNG encoding is the most expensive part of a comparison it
-   * would never display.
+   * How to produce the page and overlay images, or `false` to skip them. A
+   * whole-document sweep only needs the verdicts, and image encoding is the
+   * most expensive part of a comparison it would never display.
    */
-  withImages?: boolean;
+  images?: false | ImageEncoding;
   /** Forwarded to the runtime-neutral comparison. */
   diff?: VisualDiffOptions & BandOptions;
 }
@@ -110,12 +119,31 @@ function releaseCanvas(canvas: HTMLCanvasElement | null): void {
   canvas.height = 0;
 }
 
-function toObjectUrl(canvas: HTMLCanvasElement): Promise<string> {
+/**
+ * Encodes a rendered canvas for display or for embedding.
+ *
+ * Object URLs suit the screen: the blob stays out of the JavaScript heap and is
+ * released explicitly. Data URLs suit a report, where the bytes have to travel
+ * with the document.
+ */
+function encodeCanvas(
+  canvas: HTMLCanvasElement,
+  encoding: ImageEncoding
+): Promise<{ url: string; revocable: boolean }> {
+  const format = encoding.format ?? 'image/png';
+
+  if (encoding.encoding === 'data-url') {
+    return Promise.resolve({ url: canvas.toDataURL(format, encoding.quality), revocable: false });
+  }
   return new Promise((resolve, reject) => {
-    canvas.toBlob(blob => {
-      if (blob) resolve(URL.createObjectURL(blob));
-      else reject(new Error('Could not encode a rendered page.'));
-    }, 'image/png');
+    canvas.toBlob(
+      blob => {
+        if (blob) resolve({ url: URL.createObjectURL(blob), revocable: true });
+        else reject(new Error('Could not encode a rendered page.'));
+      },
+      format,
+      encoding.quality
+    );
   });
 }
 
@@ -339,9 +367,11 @@ export async function compareRenderedPages(
     const modifiedMask = alignedDiff ? alignedDiff.masks?.modified : exactDiff?.mask;
     const originalMask = alignedDiff?.masks?.original;
     const overlayBase = modifiedCanvas ?? originalCanvas;
-    const withImages = options.withImages ?? true;
+    const encoding: ImageEncoding | null = options.images === false
+      ? null
+      : options.images ?? {};
 
-    if (withImages && overlayBase) {
+    if (encoding && overlayBase) {
       if (modifiedMask) {
         overlayCanvas = renderOverlay(overlayBase, modifiedMask, width, height);
       } else if (!originalCanvas) {
@@ -350,21 +380,25 @@ export async function compareRenderedPages(
         overlayCanvas = renderPageTint(overlayBase, VISUAL_MASK.removed, width, height);
       }
     }
-    if (withImages && originalMask && originalCanvas) {
+    if (encoding && originalMask && originalCanvas) {
       originalOverlayCanvas = renderOverlay(originalCanvas, originalMask, width, height);
     }
 
-    const [originalUrl, modifiedUrl, overlayUrl, originalOverlayUrl] = withImages
-      ? await Promise.all([
-        originalCanvas ? toObjectUrl(originalCanvas) : null,
-        modifiedCanvas ? toObjectUrl(modifiedCanvas) : null,
-        overlayCanvas ? toObjectUrl(overlayCanvas) : null,
-        originalOverlayCanvas ? toObjectUrl(originalOverlayCanvas) : null,
-      ])
-      : [null, null, null, null];
-    [originalUrl, modifiedUrl, overlayUrl, originalOverlayUrl].forEach(url => {
-      if (url) urls.push(url);
+    const encodeOrNull = (canvas: HTMLCanvasElement | null) => (
+      canvas && encoding ? encodeCanvas(canvas, encoding) : Promise.resolve(null)
+    );
+    const encoded = await Promise.all([
+      encodeOrNull(originalCanvas),
+      encodeOrNull(modifiedCanvas),
+      encodeOrNull(overlayCanvas),
+      encodeOrNull(originalOverlayCanvas),
+    ]);
+    encoded.forEach(entry => {
+      if (entry?.revocable) urls.push(entry.url);
     });
+    const [originalUrl, modifiedUrl, overlayUrl, originalOverlayUrl] = encoded.map(
+      entry => entry?.url ?? null
+    );
     throwIfAborted(signal);
 
     // Masks are full-page buffers; they have done their job once the overlays

@@ -97,7 +97,7 @@ export async function scanDocumentVisually(
       const comparison = await compareRenderedPages(originalSource, modifiedSource, {
         mode: 'aligned',
         maxPixels,
-        withImages: false,
+        images: false,
         signal,
       });
       const diff = comparison.mode === 'aligned' ? comparison.diff : null;
@@ -140,13 +140,14 @@ export function describeScanSummary(result: VisualScanResult): string {
   const total = result.pages.length;
   const unavailable = result.pages.filter(page => page.status === 'indeterminate').length;
   const pageWord = total === 1 ? 'page' : 'pages';
+  const suffix = unavailable > 0 ? `; ${unavailable} could not be compared` : '';
 
   if (result.differing === 0) {
     return unavailable > 0
-      ? `No visual change found on ${total - unavailable} of ${total} ${pageWord}; ${unavailable} could not be compared`
+      ? `No visual change found on ${total - unavailable} of ${total} ${pageWord}${suffix}`
       : `All ${total} ${pageWord} render identically`;
   }
 
-  const suffix = unavailable > 0 ? `; ${unavailable} could not be compared` : '';
-  return `${result.differing} of ${total} ${pageWord} render differently${suffix}`;
+  const verb = result.differing === 1 ? 'renders' : 'render';
+  return `${result.differing} of ${total} ${pageWord} ${verb} differently${suffix}`;
 }
