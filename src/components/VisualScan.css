@@ -1,0 +1,170 @@
+.visual-scan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-color);
+}
+
+.visual-scan-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.visual-scan-header h3 {
+  margin: 0 0 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.visual-scan-header p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.visual-scan-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.scan-btn {
+  min-height: 36px;
+  padding: 0.45rem 0.9rem;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.scan-btn:hover {
+  background: var(--hover-bg);
+}
+
+.scan-btn.primary {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--card-bg);
+}
+
+.scan-btn.primary:hover {
+  background: var(--text-secondary);
+  border-color: var(--text-secondary);
+}
+
+.visual-scan-error {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--danger-color);
+  background: var(--danger-bg);
+  color: var(--danger-color);
+  font-size: 0.8125rem;
+}
+
+.visual-scan-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border-color);
+  list-style: none;
+}
+
+.visual-scan-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 42px;
+  padding: 0.5rem 0.35rem;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  text-align: left;
+}
+
+.visual-scan-row:hover {
+  background: var(--hover-bg);
+}
+
+.visual-scan-row.current {
+  background: var(--card-bg);
+  box-shadow: inset 2px 0 0 var(--primary-color);
+}
+
+.scan-status {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.scan-status.different {
+  color: var(--danger-color);
+}
+
+.scan-status.equal {
+  color: var(--success-color);
+}
+
+.scan-status.indeterminate {
+  color: var(--warning-color);
+}
+
+.scan-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scan-detail {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.scan-text-status {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.scan-text-status.indeterminate {
+  color: var(--warning-color);
+}
+
+.visual-scan-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .visual-scan-row {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    row-gap: 0.25rem;
+  }
+
+  .scan-detail,
+  .scan-text-status {
+    grid-column: 2;
+  }
+}

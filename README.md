@@ -18,6 +18,20 @@ Compare PDF documents privately and securely in your browser. No uploads, no ser
 - **Additions Only** - View only what was added
 - **Removals Only** - View only what was removed
 - **Changes Only** - See additions and removals side-by-side per page
+- **Visual Diff** - Render both pages on your device and compare them pixel by
+  pixel: removals in red, additions in green, recolouring in amber, with the
+  changed areas outlined. Text and pixels are reported as separate evidence, so
+  a page whose text is identical but whose layout moved is called out as such.
+
+### 🔍 Scanned Documents
+- **On-device OCR** - Pages with no text layer can be read with Tesseract, running
+  entirely in your browser. Recognized text joins the normal comparison, and is
+  labelled as OCR because recognition can be wrong.
+- **Self-hosted engine** - The recognition engine and language data are served by
+  your own deployment, never a CDN. Nothing about your document leaves the device;
+  the one-time ~8 MB download is application code, not an upload.
+- **Whole-document visual scan** - Find which pages changed even when no page has
+  any text at all.
 
 ### 🎯 Advanced Features
 - **CLI Support** - Use via `npx pdf-diff` for command-line comparisons
@@ -43,6 +57,7 @@ Compare PDF documents privately and securely in your browser. No uploads, no ser
 - **[PDF.js](https://mozilla.github.io/pdf.js/)** - Mozilla's PDF rendering engine
 - **[jsPDF](https://github.com/parallax/jsPDF)** - PDF generation for exports
 - **[diff](https://github.com/kpdecker/jsdiff)** - Text comparison algorithm
+- **[Tesseract.js](https://tesseract.projectnaptha.com/)** - Optional on-device OCR
 
 ## 🌐 Usage (Web App)
 
@@ -107,6 +122,15 @@ docker run -d \
   qiu321/diff:latest
 ```
 
+The image ships the OCR engine and English language data so that recognition
+never contacts a third party. To build without them:
+
+```bash
+docker build --build-arg ENABLE_OCR=false -t diff .
+```
+
+OCR then reports itself as unavailable rather than falling back to a CDN.
+
 ## 🚀 Development
 
 Development and test commands require Node.js 22 or later. The published CLI
@@ -123,6 +147,11 @@ npm install
 # Install Chromium for the browser regression test
 npx playwright install chromium
 
+# Optional: download the OCR engine and English language data into public/ocr
+# (about 16 MB on disk). Without this, OCR reports itself as unavailable and
+# its regression test is skipped.
+npm run prepare-ocr
+
 # Start development server
 npm run dev
 
@@ -135,6 +164,13 @@ npm run preview
 # Run linter
 npm run lint
 
+# Regenerate the deterministic test fixtures
+npm run generate-fixtures
+
 # Run core and browser regression tests
 npm test
+
+# If your machine already has a Chromium build Playwright did not download,
+# point the browser tests at it instead:
+PDF_DIFF_CHROMIUM_EXECUTABLE=/path/to/chromium npm test
 ```

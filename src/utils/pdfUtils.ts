@@ -11,6 +11,25 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 type LoadedPDF = Awaited<ReturnType<typeof pdfjsLib.getDocument>['promise']>;
 
+export interface PageSize {
+  width: number;
+  height: number;
+  rotation: number;
+}
+
+let openSessions = 0;
+
+/**
+ * Number of PDF documents currently held open.
+ *
+ * Sessions stay open so pages can be rendered on demand, which makes leaked
+ * sessions a real memory risk. This counter lets tests and diagnostics assert
+ * that every session is eventually destroyed.
+ */
+export function getOpenSessionCount(): number {
+  return openSessions;
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw signal.reason instanceof Error
@@ -39,6 +58,7 @@ export async function openPdfSession(file: File, signal?: AbortSignal) {
     signal?.removeEventListener('abort', abortLoading);
   }
   let destroyed = false;
+  openSessions += 1;
 
   const getPage = async (pageNumber: number) => {
     if (destroyed) throw new Error('PDF session has been destroyed.');
@@ -68,6 +88,19 @@ export async function openPdfSession(file: File, signal?: AbortSignal) {
     totalPages: pdf.numPages,
 
     extractPage,
+
+    /** Unscaled page geometry, used to plan a render before rasterizing it. */
+    async getPageSize(pageNumber: number, signal?: AbortSignal): Promise<PageSize> {
+      throwIfAborted(signal);
+      const page = await getPage(pageNumber);
+
+      try {
+        const viewport = page.getViewport({ scale: 1 });
+        return { width: viewport.width, height: viewport.height, rotation: viewport.rotation };
+      } finally {
+        page.cleanup();
+      }
+    },
 
     async extractDocument(signal?: AbortSignal): Promise<PDFDocument> {
       const pages: PDFPage[] = [];
@@ -117,6 +150,7 @@ export async function openPdfSession(file: File, signal?: AbortSignal) {
     async destroy(): Promise<void> {
       if (destroyed) return;
       destroyed = true;
+      openSessions -= 1;
       await pdf.destroy();
     },
   };

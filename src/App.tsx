@@ -6,28 +6,49 @@ import {
   PrivacyBanner,
   PrivacyFeatures,
   ViewModeTabs,
+  VisualDiffView,
+  VisualScan,
+  OcrPanel,
   PageSelector,
   ThemeToggle,
   ExportButton,
 } from './components';
 import type { ViewMode, Theme } from './components';
-import { extractTextFromPDF } from './utils/pdfUtils';
-import type { PDFDocument } from './utils/pdfUtils';
+import { openPdfSession } from './utils/pdfUtils';
+import { usePdfSlot } from './hooks/usePdfSlot';
+import type { LoadedPdf } from './hooks/usePdfSlot';
+
+type PdfSide = 'original' | 'modified';
+type PdfRequest = { controller: AbortController };
 import { compareDocuments } from './utils/diffUtils';
-import { exportDiffToPDF } from './utils/exportUtils';
+import type { VisualScanResult } from './utils/visualScan';
+import { applyOcrPages, findPagesNeedingOcr } from './utils/ocrDocument';
+import type { OcrTarget } from './utils/ocrDocument';
+import type { PDFPage } from './utils/pdfModel';
 import './App.css';
 
 function App() {
   const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [modifiedFile, setModifiedFile] = useState<File | null>(null);
-  const [originalDoc, setOriginalDoc] = useState<PDFDocument | null>(null);
-  const [modifiedDoc, setModifiedDoc] = useState<PDFDocument | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [original, adoptOriginal] = usePdfSlot();
+  const [modified, adoptModified] = usePdfSlot();
+  const [busy, setBusy] = useState<Record<PdfSide, boolean>>({ original: false, modified: false });
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
   const [currentPage, setCurrentPage] = useState(1);
   const [showAllPages, setShowAllPages] = useState(false);
-  const activeRequest = useRef<{ controller: AbortController } | null>(null);
+  const [visualScan, setVisualScan] = useState<VisualScanResult | null>(null);
+  const [ocrPages, setOcrPages] = useState<Record<PdfSide, Record<number, PDFPage>>>({
+    original: {},
+    modified: {},
+  });
+  const [isExporting, setIsExporting] = useState(false);
+  // One request identity per side: replacing the original must not cancel work
+  // already under way on the modified document.
+  const activeRequests = useRef<Record<PdfSide, PdfRequest | null>>({
+    original: null,
+    modified: null,
+  });
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = localStorage.getItem('pdf-diff-theme') as Theme;
     return savedTheme || 'system';
@@ -38,131 +59,249 @@ function App() {
     localStorage.setItem('pdf-diff-theme', theme);
   }, [theme]);
 
-  useEffect(() => () => activeRequest.current?.controller.abort(), []);
+  useEffect(() => () => {
+    Object.values(activeRequests.current).forEach(request => request?.controller.abort());
+  }, []);
 
-  const beginRequest = useCallback(() => {
-    activeRequest.current?.controller.abort();
+  const isCurrent = useCallback(
+    (side: PdfSide, request: PdfRequest) => activeRequests.current[side] === request,
+    []
+  );
+
+  const beginRequest = useCallback((side: PdfSide): PdfRequest => {
+    activeRequests.current[side]?.controller.abort();
     const request = { controller: new AbortController() };
-    activeRequest.current = request;
-    setIsProcessing(true);
+    activeRequests.current[side] = request;
+    setBusy(current => ({ ...current, [side]: true }));
     return request;
   }, []);
 
-  const finishRequest = useCallback((request: { controller: AbortController }) => {
-    if (activeRequest.current !== request) return;
-    activeRequest.current = null;
-    setIsProcessing(false);
+  const finishRequest = useCallback((side: PdfSide, request: PdfRequest) => {
+    if (activeRequests.current[side] !== request) return;
+    activeRequests.current[side] = null;
+    setBusy(current => ({ ...current, [side]: false }));
   }, []);
 
-  const handleOriginalFile = useCallback(async (file: File) => {
-    const request = beginRequest();
-    setOriginalFile(file);
-    setOriginalDoc(null);
-    setError(null);
-    try {
-      const doc = await extractTextFromPDF(file, request.controller.signal);
-      if (activeRequest.current !== request) return;
-      setOriginalDoc(doc);
-    } catch {
-      if (activeRequest.current === request) {
-        setError('Failed to process the original PDF. Please try another file.');
-      }
-    } finally {
-      finishRequest(request);
-    }
-  }, [beginRequest, finishRequest]);
+  const abortSide = useCallback((side: PdfSide) => {
+    activeRequests.current[side]?.controller.abort();
+    activeRequests.current[side] = null;
+  }, []);
 
-  const handleModifiedFile = useCallback(async (file: File) => {
-    const request = beginRequest();
-    setModifiedFile(file);
-    setModifiedDoc(null);
+  /**
+   * Opens a PDF, extracts its text, and hands the still-open session to the
+   * caller. A session that loses its race is destroyed instead of leaking.
+   */
+  const loadPdf = useCallback(async (
+    file: File,
+    side: PdfSide,
+    request: PdfRequest
+  ): Promise<LoadedPdf | null> => {
+    const session = await openPdfSession(file, request.controller.signal);
+
+    try {
+      const doc = await session.extractDocument(request.controller.signal);
+      if (!isCurrent(side, request)) {
+        await session.destroy();
+        return null;
+      }
+      return { doc, session };
+    } catch (error) {
+      await session.destroy();
+      throw error;
+    }
+  }, [isCurrent]);
+
+  /** Loads both sides together, destroying a survivor if its partner fails. */
+  const loadPdfPair = useCallback(async (
+    entries: readonly { file: File; side: PdfSide; request: PdfRequest }[]
+  ): Promise<(LoadedPdf | null)[]> => {
+    const results = await Promise.allSettled(
+      entries.map(entry => loadPdf(entry.file, entry.side, entry.request))
+    );
+    const loaded = results.map(result => result.status === 'fulfilled' ? result.value : null);
+    const rejected = results.find(result => result.status === 'rejected');
+
+    if (rejected) {
+      await Promise.all(loaded.map(entry => entry?.session.destroy()));
+      throw rejected.reason;
+    }
+    return loaded;
+  }, [loadPdf]);
+
+  const handleFile = useCallback(async (
+    side: PdfSide,
+    file: File,
+    adopt: (next: LoadedPdf | null) => void
+  ) => {
+    const request = beginRequest(side);
+    (side === 'original' ? setOriginalFile : setModifiedFile)(file);
+    adopt(null);
+    setOcrPages(current => ({ ...current, [side]: {} }));
     setError(null);
     try {
-      const doc = await extractTextFromPDF(file, request.controller.signal);
-      if (activeRequest.current !== request) return;
-      setModifiedDoc(doc);
+      const loaded = await loadPdf(file, side, request);
+      if (loaded) adopt(loaded);
     } catch {
-      if (activeRequest.current === request) {
-        setError('Failed to process the modified PDF. Please try another file.');
+      if (isCurrent(side, request)) {
+        setError(`Failed to process the ${side} PDF. Please try another file.`);
       }
     } finally {
-      finishRequest(request);
+      finishRequest(side, request);
     }
-  }, [beginRequest, finishRequest]);
+  }, [beginRequest, finishRequest, isCurrent, loadPdf]);
+
+  const handleOriginalFile = useCallback(
+    (file: File) => handleFile('original', file, adoptOriginal),
+    [adoptOriginal, handleFile]
+  );
+
+  const handleModifiedFile = useCallback(
+    (file: File) => handleFile('modified', file, adoptModified),
+    [adoptModified, handleFile]
+  );
 
   const handleReset = useCallback(() => {
-    activeRequest.current?.controller.abort();
-    activeRequest.current = null;
-    setIsProcessing(false);
+    abortSide('original');
+    abortSide('modified');
+    setBusy({ original: false, modified: false });
     setOriginalFile(null);
     setModifiedFile(null);
-    setOriginalDoc(null);
-    setModifiedDoc(null);
+    adoptOriginal(null);
+    adoptModified(null);
     setError(null);
     setCurrentPage(1);
-  }, []);
+    setVisualScan(null);
+    setOcrPages({ original: {}, modified: {} });
+  }, [abortSide, adoptOriginal, adoptModified]);
 
   const handleTryDemo = useCallback(async () => {
-    const request = beginRequest();
+    const requests: Record<PdfSide, PdfRequest> = {
+      original: beginRequest('original'),
+      modified: beginRequest('modified'),
+    };
+    const stale = () => !isCurrent('original', requests.original)
+      || !isCurrent('modified', requests.modified);
+
     try {
       setError(null);
-      setOriginalDoc(null);
-      setModifiedDoc(null);
-      
-      // Fetch demo PDFs
+      adoptOriginal(null);
+      adoptModified(null);
+      setOcrPages({ original: {}, modified: {} });
+
       const [originalResponse, modifiedResponse] = await Promise.all([
-        fetch('/demo-original.pdf', { signal: request.controller.signal }),
-        fetch('/demo-modified.pdf', { signal: request.controller.signal })
+        fetch('/demo-original.pdf', { signal: requests.original.controller.signal }),
+        fetch('/demo-modified.pdf', { signal: requests.modified.controller.signal })
       ]);
-      
       const [originalBlob, modifiedBlob] = await Promise.all([
         originalResponse.blob(),
         modifiedResponse.blob()
       ]);
-      
-      // Create File objects
       const originalFile = new File([originalBlob], 'demo-original.pdf', { type: 'application/pdf' });
       const modifiedFile = new File([modifiedBlob], 'demo-modified.pdf', { type: 'application/pdf' });
-      
-      // Set files
-      if (activeRequest.current !== request) return;
+
+      if (stale()) return;
       setOriginalFile(originalFile);
       setModifiedFile(modifiedFile);
-      
-      // Process PDFs
-      const [originalDoc, modifiedDoc] = await Promise.all([
-        extractTextFromPDF(originalFile, request.controller.signal),
-        extractTextFromPDF(modifiedFile, request.controller.signal)
+
+      const [loadedOriginal, loadedModified] = await loadPdfPair([
+        { file: originalFile, side: 'original', request: requests.original },
+        { file: modifiedFile, side: 'modified', request: requests.modified },
       ]);
-      
-      if (activeRequest.current !== request) return;
-      setOriginalDoc(originalDoc);
-      setModifiedDoc(modifiedDoc);
+
+      if (loadedOriginal) adoptOriginal(loadedOriginal);
+      if (loadedModified) adoptModified(loadedModified);
     } catch {
-      if (activeRequest.current === request) {
-        setError('Failed to load demo PDFs. Please try again.');
-      }
+      if (!stale()) setError('Failed to load demo PDFs. Please try again.');
     } finally {
-      finishRequest(request);
+      finishRequest('original', requests.original);
+      finishRequest('modified', requests.modified);
     }
-  }, [beginRequest, finishRequest]);
+  }, [adoptOriginal, adoptModified, beginRequest, finishRequest, isCurrent, loadPdfPair]);
+
+  /** Documents as compared: the extracted text, with recognized pages folded in. */
+  const documents = useMemo(() => ({
+    original: applyOcrPages(original?.doc ?? null, ocrPages.original),
+    modified: applyOcrPages(modified?.doc ?? null, ocrPages.modified),
+  }), [modified, ocrPages, original]);
 
   const comparisonResult = useMemo(
-    () => originalDoc && modifiedDoc ? compareDocuments(originalDoc, modifiedDoc) : null,
-    [originalDoc, modifiedDoc]
+    () => documents.original && documents.modified
+      ? compareDocuments(documents.original, documents.modified)
+      : null,
+    [documents]
   );
+
+  const ocrTargets = useMemo(() => findPagesNeedingOcr(documents), [documents]);
+  const sessions = useMemo(() => ({
+    original: original?.session ?? null,
+    modified: modified?.session ?? null,
+  }), [modified, original]);
+
+  const handlePageRecognized = useCallback((target: OcrTarget, page: PDFPage) => {
+    setOcrPages(current => ({
+      ...current,
+      [target.side]: { ...current[target.side], [target.pageNumber]: page },
+    }));
+  }, []);
   const totalPages = comparisonResult?.pageDiffs.length ?? 0;
   const currentPageDiff = comparisonResult?.pageDiffs[currentPage - 1] ?? comparisonResult?.pageDiffs[0] ?? null;
-  const stats = showAllPages ? comparisonResult?.overallStats : currentPageDiff?.stats;
+  // Rendering every page at once has no resource budget yet, so the visual
+  // layer deliberately stays on one page pair at a time.
+  const isVisualMode = viewMode === 'visual';
+  const textViewMode = viewMode === 'visual' ? 'side-by-side' : viewMode;
+  const reviewAllPages = showAllPages && !isVisualMode;
+  const scanPairs = useMemo(
+    () => (comparisonResult?.pageDiffs ?? []).map(pageDiff => ({
+      comparisonNumber: pageDiff.pageNumber,
+      label: pageDiff.label,
+      originalPageNumber: pageDiff.originalPageNumber,
+      modifiedPageNumber: pageDiff.modifiedPageNumber,
+      textStatus: pageDiff.status,
+    })),
+    [comparisonResult]
+  );
+  const stats = reviewAllPages ? comparisonResult?.overallStats : currentPageDiff?.stats;
 
   useEffect(() => {
     if (totalPages > 0 && currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
-  const handleExport = useCallback(() => {
-    if (comparisonResult) exportDiffToPDF(comparisonResult);
-  }, [comparisonResult]);
+  /**
+   * Exports the report, including visual evidence when a scan has been run.
+   *
+   * The export path is loaded on demand: jsPDF and the evidence renderer are
+   * large, and most sessions never export.
+   */
+  const handleExport = useCallback(async () => {
+    if (!comparisonResult) return;
+    setIsExporting(true);
+    try {
+      const { exportDiffToPDF } = await import('./utils/exportUtils');
+      if (!visualScan) {
+        exportDiffToPDF(comparisonResult);
+        return;
+      }
 
+      const { buildVisualEvidence } = await import('./utils/visualEvidence');
+      let evidence = null;
+      try {
+        evidence = await buildVisualEvidence({
+          original: original?.session ?? null,
+          modified: modified?.session ?? null,
+          pairs: scanPairs,
+          scan: visualScan,
+        });
+      } catch {
+        // Losing the illustrations must not cost the reader the verdicts.
+        evidence = null;
+      }
+      exportDiffToPDF(comparisonResult, { scan: visualScan, evidence });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [comparisonResult, modified, original, scanPairs, visualScan]);
+
+  const isProcessing = busy.original || busy.modified;
   const showComparison = comparisonResult !== null;
 
   return (
@@ -257,9 +396,20 @@ function App() {
               </div>
               <div className="comparison-actions">
                 <ViewModeTabs activeMode={viewMode} onModeChange={setViewMode} />
-                <ExportButton onClick={handleExport} disabled={!comparisonResult} />
+                <ExportButton
+                  onClick={handleExport}
+                  disabled={!comparisonResult || isExporting}
+                  busy={isExporting}
+                />
               </div>
             </div>
+
+            <OcrPanel
+              sessions={sessions}
+              documents={documents}
+              targets={ocrTargets}
+              onPageRecognized={handlePageRecognized}
+            />
 
             {comparisonResult.diagnostics.length > 0 && (
               <div className="comparison-warning" role="status">
@@ -279,20 +429,43 @@ function App() {
                   totalPages={totalPages}
                   pageLabel={currentPageDiff?.label}
                   onPageChange={setCurrentPage}
-                  disabled={showAllPages}
+                  disabled={reviewAllPages}
                 />
                 <label className="show-all-checkbox">
                   <input
                     type="checkbox"
-                    checked={showAllPages}
+                    checked={reviewAllPages}
+                    disabled={isVisualMode}
                     onChange={(e) => setShowAllPages(e.target.checked)}
                   />
-                  <span>Review all pages</span>
+                  <span>
+                    {isVisualMode ? 'Visual review runs one page at a time' : 'Review all pages'}
+                  </span>
                 </label>
               </div>
             )}
 
-            {showAllPages ? (
+            {isVisualMode ? (
+              currentPageDiff && (
+                <>
+                  <VisualScan
+                    originalSession={original?.session ?? null}
+                    modifiedSession={modified?.session ?? null}
+                    pairs={scanPairs}
+                    currentComparison={currentPageDiff.pageNumber}
+                    onSelectPage={setCurrentPage}
+                    onResult={setVisualScan}
+                  />
+                  <VisualDiffView
+                    originalSession={original?.session ?? null}
+                    originalPageNumber={currentPageDiff.originalPageNumber}
+                    modifiedSession={modified?.session ?? null}
+                    modifiedPageNumber={currentPageDiff.modifiedPageNumber}
+                    textStatus={currentPageDiff.status}
+                  />
+                </>
+              )
+            ) : reviewAllPages ? (
               <div className="all-pages-view">
                 {comparisonResult.pageDiffs.map(({ pageNumber, label, parts, originalText, modifiedText, stats: pageStats, status }) => (
                   <section key={pageNumber} className="page-section" aria-labelledby={`page-${pageNumber}-title`}>
@@ -311,7 +484,7 @@ function App() {
                     </div>
                     <DiffView
                       parts={parts}
-                      mode={viewMode}
+                      mode={textViewMode}
                       originalText={originalText}
                       modifiedText={modifiedText}
                     />
@@ -322,7 +495,7 @@ function App() {
               currentPageDiff && (
                 <DiffView
                   parts={currentPageDiff.parts}
-                  mode={viewMode}
+                  mode={textViewMode}
                   originalText={currentPageDiff.originalText}
                   modifiedText={currentPageDiff.modifiedText}
                 />

@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-cli
+.git
+.github
+*.log
+
+# Prepared inside the image by `npm run prepare-ocr`.
+public/ocr

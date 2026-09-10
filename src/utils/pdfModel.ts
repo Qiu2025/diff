@@ -18,11 +18,20 @@ export interface PDFPage {
   rotation: number;
   text: string;
   textRuns: PDFTextRun[];
-  extraction: {
-    source: 'native';
-    status: 'ok' | 'empty';
-    itemCount: number;
-  };
+  extraction: PageExtraction;
+}
+
+export interface PageExtraction {
+  /** Where the text came from. OCR results are not native text. */
+  source: 'native' | 'ocr';
+  status: 'ok' | 'empty';
+  itemCount: number;
+  /** Mean recognition confidence, 0..1. Only meaningful for OCR. */
+  confidence?: number;
+  /** Recognized words the engine was unsure about. */
+  lowConfidenceWords?: number;
+  /** Language the recognizer was run with. */
+  language?: string;
 }
 
 export interface PDFDocument {

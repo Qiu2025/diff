@@ -1,5 +1,8 @@
 export { PDFDropZone } from './PDFDropZone';
 export { DiffView } from './DiffView';
+export { VisualDiffView } from './VisualDiffView';
+export { VisualScan } from './VisualScan';
+export { OcrPanel } from './OcrPanel';
 export { DiffStats } from './DiffStats';
 export { PrivacyBanner, PrivacyFeatures } from './PrivacyBanner';
 export { ViewModeTabs } from './ViewModeTabs';

@@ -40,6 +40,8 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "preview": "vite preview",
     "generate-demos": "node scripts/generate-demo-pdfs.mjs",
+    "generate-fixtures": "node scripts/generate-fixtures.mjs",
+    "prepare-ocr": "node scripts/prepare-ocr-assets.mjs",
     "prepublishOnly": "npm run build:cli"
   },
   "dependencies": {
@@ -53,7 +55,8 @@
     "pdfjs-dist": "^4.10.38",
     "playwright": "^1.57.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

@@ -1,6 +1,6 @@
 # PDF Diff Project Context
 
-> Last audited: 2026-09-05 through commit `ee6bba6` (`feat: add reusable PDF sessions`).
+> Last audited: 2026-09-10 through commit `b47e28c` (`feat(export): carry visual verdicts and evidence into the report`).
 >
 > This is a context document, not a backlog. New contributors and Codex chats
 > should verify the current checkout before applying any path-specific detail.
@@ -56,10 +56,21 @@ surfaces.
 - Main orchestration and state live in `src/App.tsx`.
 - Presentational controls live in `src/components/`.
 - Browser PDF, diff, and export helpers live in `src/utils/`.
+- Raster primitives live in `src/utils/raster.ts`, exact pixel comparison in
+  `src/utils/visualDiff.ts`, reflow-aware comparison in
+  `src/utils/visualBands.ts`, and the browser rasterization adapter in
+  `src/utils/visualPageRenderer.ts`.
+- Ordered sequence alignment is shared by the text and visual layers in
+  `src/utils/sequenceAlignment.ts`.
+- Optional OCR lives in `src/utils/ocr.ts` (engine) and
+  `src/utils/ocrDocument.ts` (which pages to read, and how results rejoin the
+  comparison). Its assets are prepared by `scripts/prepare-ocr-assets.mjs`.
 
 The browser build is served as static files. The current source contains no
 document upload API. Its automatic fetches are the two same-origin demo PDFs,
-and the PDF.js worker is bundled locally.
+and the PDF.js worker is bundled locally. The OCR engine and language data are
+also same-origin, prepared into `public/ocr/` by `npm run prepare-ocr`; the
+application never falls back to the CDN Tesseract.js would use by default.
 
 ### CLI
 
@@ -76,7 +87,11 @@ and the PDF.js worker is bundled locally.
 - The web application is built in Docker and served by Nginx.
 - `.github/workflows/docker-build.yml` builds and pushes the Docker image after
   pushes to `main`.
-- `npm test` runs the core regression cases in `tests/pdf-diff.test.ts`.
+- `npm test` runs the core and Chromium regression cases in `tests/`. Browser
+  tests launch Chromium through `tests/helpers/browser.ts`, which honours
+  `PDF_DIFF_CHROMIUM_EXECUTABLE`.
+- `npm run generate-fixtures` regenerates the committed corpus in
+  `tests/fixtures/`.
 - The static CLI documentation is maintained separately in `public/cli.html`.
 
 ## Current processing flow
@@ -87,17 +102,37 @@ The browser path is currently:
 File
   -> openPdfSession() / PDF.js getDocument()
   -> extract geometry and positioned text runs page by page
-  -> destroy the text-only session in finally
+  -> keep the session open for on-demand page rendering
   -> align pages, then related lines
   -> compareDocuments()
   -> one versioned ComparisonResult
   -> React UI and report/export renderers
 ```
 
-The browser session also exposes cancellable page extraction and Canvas
-rendering for future visual analysis. The current text-only UI does not retain
-an open PDF after extraction. Browser export consumes the existing comparison
-result instead of recomputing it.
+The browser session also exposes cancellable page extraction, page geometry,
+and Canvas rendering. Each side of a comparison now keeps its session open for
+the life of that comparison so pages can be rendered on demand; the session is
+destroyed when the side is replaced, the comparison is cleared, a load is
+cancelled, or the application unmounts. Browser export consumes the existing
+comparison result instead of recomputing it.
+
+Visual comparison runs as a separate, on-demand path:
+
+```text
+PdfSession (both sides)
+  -> getPageSize() to plan one shared render scale within a pixel budget
+  -> render both pages into one raster size
+  -> the comparison worker
+     compareAlignedRasters()   band segmentation, matching, per-band comparison
+     or compareRasters()       exact, position by position
+  -> status, changed pixels, bands, regions, per-pixel masks
+  -> overlay canvas per side -> object URLs -> React
+  -> canvases, image data, and masks released before the result is returned
+```
+
+The visual result is deliberately not merged into `ComparisonResult`. Text and
+pixels are separate evidence with separate statuses; the UI reconciles them in
+words rather than averaging them into one number.
 
 The CLI uses a Node-specific PDF.js adapter but produces the same page model and
 calls the shared alignment/comparison core. Text, HTML, JSON, JUnit, and PDF
@@ -139,28 +174,64 @@ text fingerprints handle inserted and removed text pages. Pages with no
 extractable text can be paired by position but have no similarity score; highly
 dissimilar text pages can also be represented as one-sided pairs.
 
-Visual fingerprints are needed before image-only page matching can be treated
-as reliable.
+Pixel comparison now exists, but it runs *after* alignment on a pair the text
+layer chose. Visual fingerprints are still needed before image-only page
+matching can be treated as reliable.
 
-### 3. Work is synchronous and has no resource budget
+### 3. Pixel comparison models vertical reflow only
 
-`compareDocuments()` is called synchronously from React `useMemo()`. The
-comparison phase has no cancellation, timeout, maximum edit complexity,
-text-item budget, or rendered-pixel budget.
+The aligned engine segments each render into horizontal bands of content,
+matches them between versions, and compares each matched band where it sits, so
+an inserted line no longer marks the rest of the page as changed. Two limits
+remain:
+
+- horizontal displacement is not modelled, so a line whose content shifts
+  sideways is reported as edited rather than moved;
+- bands span the full page width, so a multi-column layout attributes a change
+  in one column to the whole row. Column detection is not implemented.
+
+The exact engine stays available and makes no alignment assumptions; its
+changed-pixel percentage is not an edit-size metric and must not be presented
+as one.
+
+### 4. Work is synchronous and has no resource budget
+
+`compareDocuments()` is called synchronously from React `useMemo()`. The text
+comparison phase has no cancellation, timeout, maximum edit complexity, or
+text-item budget.
+
+Visual comparison is the exception: it runs in one application worker for one
+page pair at a time, is cancellable, and has an explicit rendered-pixel budget.
+Page rendering and PNG encoding still happen on the UI thread.
+
+A whole-document sweep runs the same engine over every page pair, one at a time,
+at a lower render budget and with images turned off. It answers "which pages
+changed" — the question the text layer cannot answer for a scanned document.
+
+When a sweep has been run, the browser PDF export carries its verdicts and, for
+a capped number of changed pages, landscape sheets of the marked-up renders.
+Evidence images are encoded as lossy data URLs: a report has to carry its bytes,
+and a reviewer needs to see which line changed, not to re-read the document from
+the report.
 
 "Review all pages" retains every page's original text, modified text, diff
 parts, and statistics, then mounts all page details in the DOM.
 
-### 4. Browser cancellation stops extraction, not synchronous comparison
+### 5. Browser cancellation stops extraction, not synchronous comparison
 
 `PdfSession` opens a browser PDF once, validates page access, supports
 `AbortSignal`, cleans up pages, and destroys the document. `App.tsx` keeps one
-active request identity and aborts older extraction when a file is replaced,
-the demo is restarted, or the comparison resets. CLI extraction also cleans up
-pages and documents. Cancellation does not interrupt the synchronous
-`compareDocuments()` call once extraction is complete.
+active request identity *per side* and aborts older extraction when that side's
+file is replaced, the demo is restarted, or the comparison resets. Per-side
+identity matters: a single shared identity meant choosing the second document
+cancelled the first, leaving no comparison and no error. CLI extraction also cleans up
+pages and documents. Sessions are now kept open for the life of a comparison
+and destroyed on replacement, reset, cancellation, and unmount; an open-session
+counter makes that lifecycle testable. Cancellation does not interrupt the
+synchronous `compareDocuments()` call once extraction is complete. Visual
+comparison, which is asynchronous, does honour cancellation end to end.
 
-### 5. Comparison semantics and metrics remain intentionally narrow
+### 6. Comparison semantics and metrics remain intentionally narrow
 
 The result has a schema version, text-engine version, page pairs, per-page
 statistics, diagnostics, and explicit `equal`, `different`, and `indeterminate`
@@ -170,20 +241,27 @@ both a deletion and an addition, and multilingual percentage semantics are not
 defined.
 
 Text-semantic, text-exact, visual, and structural results should remain
-separate instead of being compressed into one ambiguous change percentage.
+separate instead of being compressed into one ambiguous change percentage. The
+visual layer follows this rule today: it has its own status, its own metrics,
+and its own diagnostics, and it is not folded into the text result.
 
-### 6. Test and fixture coverage is still narrow
+### 7. Test and fixture coverage is still narrow
 
 The regression suite covers the deterministic demo, core text behavior, line
 and page alignment, the page model, explicit comparison states, HTML escaping,
-JSON/JUnit result contracts, `PdfSession`, the sample browser flow, and stale
-replacement/reset races in Chromium.
+JSON/JUnit result contracts, `PdfSession`, the sample browser flow, stale
+replacement/reset races, PDF session lifetime, exact and reflow-aware pixel
+comparison, page rasterization, and the Visual view in Chromium.
 
-The corpus still needs scanned/image-only pages, multi-column text, rotation,
-RTL and CJK text, ligatures, line wrapping/hyphenation, damaged/encrypted PDFs,
-and very different long pages.
+`tests/fixtures/` adds a deterministic corpus generated by
+`npm run generate-fixtures`: a pure reflow pair, an image-only "scanned" pair,
+Letter and A4 versions of one page, a landscape page, and a truncated file.
 
-### 7. CLI and public contract details have drifted
+The corpus still needs true `/Rotate` pages, multi-column text, RTL and CJK
+text, ligatures, line wrapping/hyphenation, encrypted PDFs, and very long
+documents.
+
+### 8. CLI and public contract details have drifted
 
 - `package.json` reports version `0.0.3`; the CLI hard-codes `1.0.4`.
 - The repository URL in `package.json` contains a duplicated `https://`.
@@ -222,7 +300,7 @@ Browser source adapter          Node source adapter
                    |
  UI / HTML / PDF / JSON / JUnit renderers
 
-OCR -> produces the same positioned text-run contract
+OCR -> produces the same positioned text-run contract (implemented)
 AI  -> consumes document artifacts and cites deterministic evidence
 Translation -> separate layout reconstruction and PDF writing pipeline
 ```
@@ -290,6 +368,14 @@ concurrency and immediate release of large image buffers.
 
 The technical dependencies suggest the following direction:
 
+Pixel comparison of one page pair, with and without reflow tolerance, is
+implemented. Whole-document visual review, visual page fingerprints for
+alignment, column-aware banding, and visual evidence in exports are not.
+
+OCR is implemented for English, on demand, and feeds the same page model, so
+alignment, comparison, statistics and export work on a scanned document without
+knowing where the words came from.
+
 ```text
 reliable text extraction and page alignment
   -> visual and lightweight structural diff
@@ -337,9 +423,11 @@ cheap to decide when a concrete runtime or deployment requirement exists.
 
 ## Known small correctness and maintenance issues
 
-- Browser export is statically imported and contributes to the initial feature
-  graph even when no export is requested.
-- The Docker build uses `npm install`, and the repository has no `.dockerignore`.
+- Browser export and the evidence renderer are dynamic imports, so jsPDF stays
+  out of the initial feature graph.
+- The Docker build uses `npm ci` and the repository has a `.dockerignore`. OCR
+  assets are prepared inside the image, and can be skipped with
+  `--build-arg ENABLE_OCR=false`.
 - Nginx currently has no CSP or explicit cross-origin isolation headers.
 - The manifest exists without a service worker, so the project is not an
   offline-reloadable PWA.

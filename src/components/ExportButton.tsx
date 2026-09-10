@@ -3,9 +3,10 @@ import './ExportButton.css';
 interface ExportButtonProps {
   onClick: () => void;
   disabled?: boolean;
+  busy?: boolean;
 }
 
-export function ExportButton({ onClick, disabled }: ExportButtonProps) {
+export function ExportButton({ onClick, disabled, busy }: ExportButtonProps) {
   return (
     <button
       className="export-btn"
@@ -18,7 +19,7 @@ export function ExportButton({ onClick, disabled }: ExportButtonProps) {
         <polyline points="7 10 12 15 17 10"></polyline>
         <line x1="12" y1="15" x2="12" y2="3"></line>
       </svg>
-      Export PDF
+      {busy ? 'Preparing…' : 'Export PDF'}
     </button>
   );
 }

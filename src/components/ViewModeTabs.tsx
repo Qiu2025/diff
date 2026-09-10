@@ -1,6 +1,6 @@
 import './ViewModeTabs.css';
 
-export type ViewMode = 'side-by-side' | 'unified' | 'additions' | 'removals' | 'changes-only';
+export type ViewMode = 'side-by-side' | 'unified' | 'additions' | 'removals' | 'changes-only' | 'visual';
 
 interface ViewModeTabsProps {
   activeMode: ViewMode;
@@ -13,6 +13,7 @@ const tabs: { mode: ViewMode; label: string }[] = [
   { mode: 'additions', label: 'Added' },
   { mode: 'removals', label: 'Removed' },
   { mode: 'changes-only', label: 'Changes' },
+  { mode: 'visual', label: 'Visual' },
 ];
 
 export function ViewModeTabs({ activeMode, onModeChange }: ViewModeTabsProps) {
