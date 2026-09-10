@@ -197,8 +197,11 @@ text-item budget.
 
 Visual comparison is the exception: it runs in one application worker for one
 page pair at a time, is cancellable, and has an explicit rendered-pixel budget.
-Page rendering and PNG encoding still happen on the UI thread. Whole-document
-visual analysis stays unavailable until a bounded multi-page job exists.
+Page rendering and PNG encoding still happen on the UI thread.
+
+A whole-document sweep runs the same engine over every page pair, one at a time,
+at a lower render budget and with images turned off. It answers "which pages
+changed" — the question the text layer cannot answer for a scanned document.
 
 "Review all pages" retains every page's original text, modified text, diff
 parts, and statistics, then mounts all page details in the DOM.

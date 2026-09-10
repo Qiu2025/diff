@@ -114,3 +114,59 @@ test('both documents can be chosen without waiting for the first to finish', asy
 
   assert.deepEqual(browserErrors, []);
 });
+
+test('the whole-document scan gives every page a verdict', async t => {
+  const server = await startDevServer();
+  t.after(() => server.close());
+
+  const browser = await launchChromium();
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const browserErrors: string[] = [];
+  page.on('pageerror', error => browserErrors.push(error.message));
+  page.on('console', message => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+
+  await page.goto(server.baseUrl);
+
+  // An image-only document has no text layer at all, so the sweep is the only
+  // thing that can say whether anything changed.
+  await page.locator('#file-input-original-pdf').setInputFiles('tests/fixtures/scan-original.pdf');
+  await page.locator('#file-input-modified-pdf').setInputFiles('tests/fixtures/scan-modified.pdf');
+  await page.getByRole('heading', { name: 'Comparison results' }).waitFor();
+  await page.getByRole('button', { name: 'Visual' }).click();
+  await page.getByRole('button', { name: 'Scan all pages' }).click();
+  await page.getByText('1 of 1 page render differently').waitFor({ timeout: 60_000 });
+
+  const scannedRow = page.locator('.visual-scan-row').first();
+  assert.match(await scannedRow.textContent() ?? '', /^Changed/);
+  assert.match(await scannedRow.textContent() ?? '', /no text$/);
+
+  // The text layer disagrees on purpose: it cannot read this document.
+  await page.getByRole('button', { name: 'Split' }).click();
+  await page.getByText(/no extractable text/).waitFor();
+
+  await page.getByRole('button', { name: 'Clear both files' }).click();
+  await page.locator('#file-input-original-pdf').setInputFiles('public/demo-original.pdf');
+  await page.locator('#file-input-modified-pdf').setInputFiles('public/demo-modified.pdf');
+  await page.getByRole('heading', { name: 'Comparison results' }).waitFor();
+  await page.getByRole('button', { name: 'Visual' }).click();
+
+  // A new pair of documents must not inherit the previous scan's verdicts.
+  assert.equal(await page.locator('.visual-scan-row').count(), 0);
+
+  await page.getByRole('button', { name: 'Scan all pages' }).click();
+  await page.getByText('2 of 2 pages render differently').waitFor({ timeout: 60_000 });
+  assert.equal(await page.locator('.visual-scan-row').count(), 2);
+
+  // A scan row is a shortcut to that page's full-resolution comparison.
+  await page.locator('.visual-scan-row').nth(1).click();
+  await page.getByText('2 of 2', { exact: true }).waitFor();
+  assert.match(
+    await page.locator('.visual-scan-row.current').textContent() ?? '',
+    /Page 2/
+  );
+
+  assert.deepEqual(browserErrors, []);
+});

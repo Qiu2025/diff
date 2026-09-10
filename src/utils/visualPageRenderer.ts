@@ -55,6 +55,12 @@ export interface RenderComparisonOptions {
   minScale?: number;
   maxScale?: number;
   signal?: AbortSignal;
+  /**
+   * Produce page and overlay images. A whole-document sweep only needs the
+   * verdicts, and PNG encoding is the most expensive part of a comparison it
+   * would never display.
+   */
+  withImages?: boolean;
   /** Forwarded to the runtime-neutral comparison. */
   diff?: VisualDiffOptions & BandOptions;
 }
@@ -333,8 +339,9 @@ export async function compareRenderedPages(
     const modifiedMask = alignedDiff ? alignedDiff.masks?.modified : exactDiff?.mask;
     const originalMask = alignedDiff?.masks?.original;
     const overlayBase = modifiedCanvas ?? originalCanvas;
+    const withImages = options.withImages ?? true;
 
-    if (overlayBase) {
+    if (withImages && overlayBase) {
       if (modifiedMask) {
         overlayCanvas = renderOverlay(overlayBase, modifiedMask, width, height);
       } else if (!originalCanvas) {
@@ -343,16 +350,18 @@ export async function compareRenderedPages(
         overlayCanvas = renderPageTint(overlayBase, VISUAL_MASK.removed, width, height);
       }
     }
-    if (originalMask && originalCanvas) {
+    if (withImages && originalMask && originalCanvas) {
       originalOverlayCanvas = renderOverlay(originalCanvas, originalMask, width, height);
     }
 
-    const [originalUrl, modifiedUrl, overlayUrl, originalOverlayUrl] = await Promise.all([
-      originalCanvas ? toObjectUrl(originalCanvas) : null,
-      modifiedCanvas ? toObjectUrl(modifiedCanvas) : null,
-      overlayCanvas ? toObjectUrl(overlayCanvas) : null,
-      originalOverlayCanvas ? toObjectUrl(originalOverlayCanvas) : null,
-    ]);
+    const [originalUrl, modifiedUrl, overlayUrl, originalOverlayUrl] = withImages
+      ? await Promise.all([
+        originalCanvas ? toObjectUrl(originalCanvas) : null,
+        modifiedCanvas ? toObjectUrl(modifiedCanvas) : null,
+        overlayCanvas ? toObjectUrl(overlayCanvas) : null,
+        originalOverlayCanvas ? toObjectUrl(originalOverlayCanvas) : null,
+      ])
+      : [null, null, null, null];
     [originalUrl, modifiedUrl, overlayUrl, originalOverlayUrl].forEach(url => {
       if (url) urls.push(url);
     });

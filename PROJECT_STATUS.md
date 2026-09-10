@@ -1,6 +1,6 @@
 # PDF Diff Project Status
 
-> Last updated: 2026-09-10. Implementation baseline: `a0c77cf` plus the working tree.
+> Last updated: 2026-09-10. Implementation baseline: `b6fab9f` plus the working tree.
 >
 > This is the live implementation and verification ledger. Read
 > [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) for the product direction and
@@ -41,7 +41,8 @@ Keep this file current and concise. Durable product decisions belong in
 | Reflow-aware comparison | Renders are segmented into content bands, matched between versions, and compared where each band actually sits; bands are reported as equal, moved, changed, added, or removed | Automated, plus a Chromium check on the reflow fixture | `a0c77cf` |
 | Fixture corpus | Deterministic reflow, image-only/scanned, Letter/A4, landscape, and truncated fixtures in `tests/fixtures/` | Automated | `a2d03df` |
 | Per-side request lifecycle | Each document owns its own request identity, so choosing the second file no longer cancels the first | Automated in Chromium | `e718055` |
-| Comparison worker | Band segmentation and pixel comparison run in one application worker; rasters and masks cross as transferable buffers, cancellation discards the worker, and an inline fallback covers runtimes without workers | Automated in Chromium, including a frame-count check that fails when the work runs inline | Current working tree |
+| Comparison worker | Band segmentation and pixel comparison run in one application worker; rasters and masks cross as transferable buffers, cancellation discards the worker, and an inline fallback covers runtimes without workers | Automated in Chromium, including a frame-count check that fails when the work runs inline | `b6fab9f` |
+| Whole-document visual scan | Every page pair is swept sequentially at a reduced budget with progress and cancellation, giving each pair a visual verdict next to its text verdict; rows link to the full-resolution comparison | Automated in Chromium on the image-only fixture and the demo | Current working tree |
 
 `src/cli/diffUtils.ts` re-exports the shared core; it is not a second diff
 implementation. The browser text-only path currently opens a session, extracts
@@ -50,7 +51,7 @@ open PDF after extraction until visual comparison has a real consumer.
 
 ## Regression coverage
 
-`npm test` currently runs 48 cases across the core and browser regression files:
+`npm test` currently runs 49 cases across the core and browser regression files:
 
 | Behavior | Coverage |
 | --- | --- |
@@ -76,6 +77,7 @@ open PDF after extraction until visual comparison has a real consumer.
 | Letter/A4, landscape, and truncated fixtures | Automated |
 | Choosing both documents without waiting for the first | Automated in Chromium |
 | The UI thread keeps painting during a comparison, and a cancelled job does not break later ones | Automated in Chromium |
+| Whole-document scan verdicts, including an image-only document the text layer cannot read; scan state resets with new documents; a row selects its page | Automated in Chromium |
 | Sample-file browser comparison flow | Automated in Chromium |
 | React upload/replacement/race behavior | Automated in Chromium for replacement and reset races |
 | Browser PDF export file contents/layout | Not automated |
@@ -97,9 +99,9 @@ bugs, especially for arbitrary PDF producers and layouts.
   application worker.
 - `App.tsx` uses one active request identity/controller so replacement, demo,
   and reset operations cancel and invalidate stale extraction results.
-- Visual comparison exists for one page pair at a time in the browser only. It
-  is not part of `ComparisonResult`, not available in the CLI, and not included
-  in any export. Whole-document visual analysis is blocked on resource budgets.
+- Visual comparison is browser-only. It is not part of `ComparisonResult`, not
+  available in the CLI, and not included in any export. The whole-document scan
+  produces verdicts but they are not persisted with the comparison result.
 - Pixel comparison models vertical reflow only. A line whose content shifts
   sideways is reported as edited rather than moved, which is conservative but
   can overstate an edit. The exact engine remains available and makes no
@@ -114,10 +116,10 @@ bugs, especially for arbitrary PDF producers and layouts.
 
 ## Next work, in priority order
 
-1. **Extend visual review beyond one page pair.** The worker and the render
-   budget are in place; what is missing is a job that walks the page pairs with
-   bounded concurrency, plus a way to carry visual evidence into the exported
-   report. Rendering and PNG encoding still run on the UI thread.
+1. **Carry visual evidence into the exported report.** The scan produces
+   per-page verdicts and the page view produces marked-up renders; neither
+   reaches the PDF or HTML export, so a reviewer cannot hand the result to
+   anyone. Rendering and PNG encoding also still run on the UI thread.
 2. **Continue expanding the corpus.** Still missing: true `/Rotate` pages,
    multi-column text, CJK/RTL, ligatures, encrypted files, and large documents.
 3. **Detect columns before banding.** Horizontal bands attribute a change in one
@@ -133,10 +135,10 @@ foundations remain unfinished.
 
 ## Latest verification
 
-Verified on 2026-09-10 against the current working tree after `e718055`:
+Verified on 2026-09-10 against the current working tree after `b6fab9f`:
 
 ```text
-npm test                                                        passed (48 cases, including Chromium)
+npm test                                                        passed (49 cases, including Chromium)
 npm run lint                                                    passed
 ./node_modules/.bin/tsc -p tsconfig.app.json --noEmit --incremental false   passed
 ./node_modules/.bin/tsc -p tsconfig.cli.json --noEmit --incremental false   passed
@@ -172,6 +174,11 @@ comparison reports 49,253 changed pixels, the aligned comparison 6,110.
 Comparison of one 1250×1767 page pair takes about 200 ms. Run inline it painted
 0 animation frames in that time; run in the worker it painted 14, about 67 fps.
 Page rendering and PNG encoding still happen on the UI thread.
+
+The whole-document scan sweeps at ≈96 DPI and skips overlay and PNG work
+entirely. On the image-only fixture, which has no text layer at all, it reports
+the single page as changed; on the demo it reports both pages as changed with
+per-page band counts.
 
 Browser tests launch Chromium through `tests/helpers/browser.ts`, which honours
 `PDF_DIFF_CHROMIUM_EXECUTABLE` for environments that ship a preinstalled

@@ -7,6 +7,7 @@ import {
   PrivacyFeatures,
   ViewModeTabs,
   VisualDiffView,
+  VisualScan,
   PageSelector,
   ThemeToggle,
   ExportButton,
@@ -214,6 +215,16 @@ function App() {
   const isVisualMode = viewMode === 'visual';
   const textViewMode = viewMode === 'visual' ? 'side-by-side' : viewMode;
   const reviewAllPages = showAllPages && !isVisualMode;
+  const scanPairs = useMemo(
+    () => (comparisonResult?.pageDiffs ?? []).map(pageDiff => ({
+      comparisonNumber: pageDiff.pageNumber,
+      label: pageDiff.label,
+      originalPageNumber: pageDiff.originalPageNumber,
+      modifiedPageNumber: pageDiff.modifiedPageNumber,
+      textStatus: pageDiff.status,
+    })),
+    [comparisonResult]
+  );
   const stats = reviewAllPages ? comparisonResult?.overallStats : currentPageDiff?.stats;
 
   useEffect(() => {
@@ -359,13 +370,22 @@ function App() {
 
             {isVisualMode ? (
               currentPageDiff && (
-                <VisualDiffView
-                  originalSession={original?.session ?? null}
-                  originalPageNumber={currentPageDiff.originalPageNumber}
-                  modifiedSession={modified?.session ?? null}
-                  modifiedPageNumber={currentPageDiff.modifiedPageNumber}
-                  textStatus={currentPageDiff.status}
-                />
+                <>
+                  <VisualScan
+                    originalSession={original?.session ?? null}
+                    modifiedSession={modified?.session ?? null}
+                    pairs={scanPairs}
+                    currentComparison={currentPageDiff.pageNumber}
+                    onSelectPage={setCurrentPage}
+                  />
+                  <VisualDiffView
+                    originalSession={original?.session ?? null}
+                    originalPageNumber={currentPageDiff.originalPageNumber}
+                    modifiedSession={modified?.session ?? null}
+                    modifiedPageNumber={currentPageDiff.modifiedPageNumber}
+                    textStatus={currentPageDiff.status}
+                  />
+                </>
               )
             ) : reviewAllPages ? (
               <div className="all-pages-view">
