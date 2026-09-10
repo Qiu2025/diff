@@ -11,6 +11,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 type LoadedPDF = Awaited<ReturnType<typeof pdfjsLib.getDocument>['promise']>;
 
+export interface PageSize {
+  width: number;
+  height: number;
+  rotation: number;
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw signal.reason instanceof Error
@@ -68,6 +74,19 @@ export async function openPdfSession(file: File, signal?: AbortSignal) {
     totalPages: pdf.numPages,
 
     extractPage,
+
+    /** Unscaled page geometry, used to plan a render before rasterizing it. */
+    async getPageSize(pageNumber: number, signal?: AbortSignal): Promise<PageSize> {
+      throwIfAborted(signal);
+      const page = await getPage(pageNumber);
+
+      try {
+        const viewport = page.getViewport({ scale: 1 });
+        return { width: viewport.width, height: viewport.height, rotation: viewport.rotation };
+      } finally {
+        page.cleanup();
+      }
+    },
 
     async extractDocument(signal?: AbortSignal): Promise<PDFDocument> {
       const pages: PDFPage[] = [];

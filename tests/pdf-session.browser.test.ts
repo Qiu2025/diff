@@ -1,21 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { chromium } from 'playwright';
-import { createServer } from 'vite';
+import { launchChromium, startDevServer } from './helpers/browser.ts';
 
 test('browser PdfSession and sample comparison flow', async t => {
-  const server = await createServer({
-    logLevel: 'silent',
-    server: { host: '127.0.0.1', port: 0 },
-  });
-  await server.listen();
+  const server = await startDevServer();
   t.after(() => server.close());
 
-  const baseUrl = server.resolvedUrls?.local[0];
-  assert.ok(baseUrl);
-
-  const browser = await chromium.launch();
+  const { baseUrl } = server;
+  const browser = await launchChromium();
   t.after(() => browser.close());
   const page = await browser.newPage();
   const browserErrors: string[] = [];
