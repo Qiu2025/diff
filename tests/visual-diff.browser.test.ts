@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { launchChromium, startDevServer } from './helpers/browser.ts';
 
-test('browser visual page rendering and comparison', async t => {
+test('browser exact page rendering and comparison', async t => {
   const server = await startDevServer();
   t.after(() => server.close());
 
@@ -38,17 +38,17 @@ test('browser visual page rendering and comparison', async t => {
       const changed = await compareRenderedPages(
         { session: original, pageNumber: 1 },
         { session: modified, pageNumber: 1 },
-        { maxPixels: 400_000 }
+        { mode: 'exact', maxPixels: 400_000 }
       );
       const identical = await compareRenderedPages(
         { session: original, pageNumber: 1 },
         { session: original, pageNumber: 1 },
-        { maxPixels: 400_000 }
+        { mode: 'exact', maxPixels: 400_000 }
       );
       const oneSided = await compareRenderedPages(
         null,
         { session: modified, pageNumber: 2 },
-        { maxPixels: 400_000 }
+        { mode: 'exact', maxPixels: 400_000 }
       );
 
       const overlayUrl = changed.images.overlay ?? '';
@@ -132,5 +132,106 @@ test('browser visual page rendering and comparison', async t => {
 
   assert.equal(result.revokedOverlayFailed, true, 'release() must revoke its object URLs');
   assert.equal(result.abortName, 'AbortError');
+  assert.deepEqual(browserErrors, []);
+});
+
+test('reflow-aware comparison separates edits from displacement', async t => {
+  const server = await startDevServer();
+  t.after(() => server.close());
+
+  const browser = await launchChromium();
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  const browserErrors: string[] = [];
+  page.on('pageerror', error => browserErrors.push(error.message));
+  page.on('console', message => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+
+  await page.goto(server.baseUrl);
+
+  const result = await page.evaluate(async () => {
+    const { openPdfSession } = await import('/src/utils/pdfUtils.ts');
+    const { compareRenderedPages } = await import('/src/utils/visualPageRenderer.ts');
+
+    const load = async (name: string) => {
+      const response = await fetch(`/tests/fixtures/${name}.pdf`);
+      if (!response.ok) throw new Error(`${name} request failed: ${response.status}`);
+      return openPdfSession(new File([await response.blob()], `${name}.pdf`, {
+        type: 'application/pdf',
+      }));
+    };
+
+    const compare = async (originalName: string, modifiedName: string) => {
+      const original = await load(originalName);
+      const modified = await load(modifiedName);
+      try {
+        const exact = await compareRenderedPages(
+          { session: original, pageNumber: 1 },
+          { session: modified, pageNumber: 1 },
+          { mode: 'exact' }
+        );
+        const aligned = await compareRenderedPages(
+          { session: original, pageNumber: 1 },
+          { session: modified, pageNumber: 1 },
+          { mode: 'aligned' }
+        );
+        const summary = {
+          exactChangedPixels: exact.diff.changedPixels,
+          exactMode: exact.mode,
+          alignedMode: aligned.mode,
+          alignedChangedPixels: aligned.diff.changedPixels,
+          status: aligned.diff.status,
+          bandCounts: 'bandCounts' in aligned.diff ? aligned.diff.bandCounts : null,
+          regions: aligned.diff.regions.length,
+          removedRegions: 'removedRegions' in aligned.diff ? aligned.diff.removedRegions.length : -1,
+          hasMasks: 'masks' in aligned.diff,
+          hasOriginalOverlay: aligned.images.originalOverlay !== null,
+          hasOverlay: aligned.images.overlay !== null,
+        };
+        exact.release();
+        aligned.release();
+        return summary;
+      } finally {
+        await original.destroy();
+        await modified.destroy();
+      }
+    };
+
+    return {
+      reflow: await compare('reflow-original', 'reflow-modified'),
+      scan: await compare('scan-original', 'scan-modified'),
+    };
+  });
+
+  const { reflow } = result;
+  assert.equal(reflow.exactMode, 'exact');
+  assert.equal(reflow.alignedMode, 'aligned');
+  assert.equal(reflow.status, 'different');
+  assert.equal(reflow.hasMasks, false, 'the pixel masks must not escape the adapter');
+
+  // One line was inserted and one word was edited; everything else only moved.
+  assert.deepEqual(reflow.bandCounts && {
+    added: reflow.bandCounts.added,
+    removed: reflow.bandCounts.removed,
+    changed: reflow.bandCounts.changed,
+  }, { added: 1, removed: 0, changed: 1 });
+  assert.ok(
+    (reflow.bandCounts?.moved ?? 0) >= 5,
+    'the lines below the insertion must be reported as moved, not changed'
+  );
+  assert.ok(
+    reflow.alignedChangedPixels * 5 < reflow.exactChangedPixels,
+    `aligned found ${reflow.alignedChangedPixels} of the exact comparison's ${reflow.exactChangedPixels} changed pixels`
+  );
+  assert.equal(reflow.hasOverlay, true);
+  assert.equal(reflow.hasOriginalOverlay, true);
+
+  // A scanned page has no text layer at all, so this is the only verdict
+  // available for it.
+  assert.equal(result.scan.status, 'different');
+  assert.ok(result.scan.regions > 0);
+  assert.ok(result.scan.removedRegions > 0);
+
   assert.deepEqual(browserErrors, []);
 });

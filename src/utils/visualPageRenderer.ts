@@ -1,6 +1,6 @@
 /**
- * Browser adapter that rasterizes a page pair and runs the runtime-neutral
- * visual comparison over it.
+ * Browser adapter that rasterizes a page pair and runs a visual comparison
+ * over it.
  *
  * Rendering is the most expensive thing this application does, so every render
  * happens inside an explicit pixel budget and every canvas and image buffer is
@@ -8,8 +8,10 @@
  * long-lived comparison result.
  */
 
-import { compareRasters, withDiagnostic, VISUAL_MASK } from './visualDiff';
-import type { RasterImage, VisualDiffOptions, VisualPageDiff } from './visualDiff';
+import { compareRasters, withDiagnostic, VISUAL_MASK } from './visualDiff.ts';
+import type { RasterImage, VisualDiffOptions, VisualPageDiff } from './visualDiff.ts';
+import { compareAlignedRasters } from './visualBands.ts';
+import type { AlignedPageDiff, BandOptions } from './visualBands.ts';
 import type { PageSize, PdfSession } from './pdfUtils';
 
 export interface PageRenderSource {
@@ -17,27 +19,43 @@ export interface PageRenderSource {
   pageNumber: number;
 }
 
-export interface VisualPageComparison {
-  diff: VisualPageDiff;
-  /** Object URLs for display. Call {@link VisualPageComparison.release}. */
-  images: {
-    original: string | null;
-    modified: string | null;
-    overlay: string | null;
-  };
+export type VisualMode = 'aligned' | 'exact';
+
+export interface VisualPageImages {
+  /** Plain render of each side. */
+  original: string | null;
+  modified: string | null;
+  /** Modified page with change marks. */
+  overlay: string | null;
+  /** Original page with removal marks. Only produced in aligned mode. */
+  originalOverlay: string | null;
+}
+
+interface ComparisonBase {
+  images: VisualPageImages;
   /** Points-to-pixels factor both pages were rendered at. */
   scale: number;
   release: () => void;
 }
 
+export type VisualPageComparison =
+  | (ComparisonBase & { mode: 'exact'; diff: VisualPageDiff })
+  | (ComparisonBase & { mode: 'aligned'; diff: AlignedPageDiff });
+
 export interface RenderComparisonOptions {
+  /**
+   * `aligned` removes vertical displacement before comparing, so an inserted
+   * line does not mark the rest of the page as changed. `exact` compares
+   * position by position.
+   */
+  mode?: VisualMode;
   /** Hard cap on the rasterized area of one page. */
   maxPixels?: number;
   minScale?: number;
   maxScale?: number;
   signal?: AbortSignal;
   /** Forwarded to the runtime-neutral comparison. */
-  diff?: VisualDiffOptions;
+  diff?: VisualDiffOptions & BandOptions;
 }
 
 /** Roughly 150 DPI for US Letter, which is legible without being wasteful. */
@@ -191,7 +209,7 @@ function renderPageTint(
   return overlay;
 }
 
-/** Paints the change mask over a washed-out copy of the modified page. */
+/** Paints a change mask over a washed-out copy of the page it belongs to. */
 function renderOverlay(
   base: HTMLCanvasElement,
   mask: Uint8Array,
@@ -217,13 +235,23 @@ function renderOverlay(
   return overlay;
 }
 
-function emptyComparison(diff: VisualPageDiff): VisualPageComparison {
-  return {
-    diff,
-    images: { original: null, modified: null, overlay: null },
-    scale: 0,
-    release: () => {},
-  };
+const NO_IMAGES: VisualPageImages = {
+  original: null,
+  modified: null,
+  overlay: null,
+  originalOverlay: null,
+};
+
+function emptyComparison(
+  mode: VisualMode,
+  original: RasterImage | null,
+  modified: RasterImage | null,
+  options: RenderComparisonOptions
+): VisualPageComparison {
+  const base = { images: NO_IMAGES, scale: 0, release: () => {} };
+  return mode === 'exact'
+    ? { ...base, mode, diff: compareRasters(original, modified, options.diff) }
+    : { ...base, mode, diff: compareAlignedRasters(original, modified, options.diff) };
 }
 
 /**
@@ -238,9 +266,10 @@ export async function compareRenderedPages(
   options: RenderComparisonOptions = {}
 ): Promise<VisualPageComparison> {
   const { signal, diff: diffOptions } = options;
+  const mode: VisualMode = options.mode ?? 'aligned';
   throwIfAborted(signal);
 
-  if (!original && !modified) return emptyComparison(compareRasters(null, null, diffOptions));
+  if (!original && !modified) return emptyComparison(mode, null, null, options);
 
   const [originalSize, modifiedSize] = await Promise.all([
     original ? original.session.getPageSize(original.pageNumber, signal) : null,
@@ -255,6 +284,7 @@ export async function compareRenderedPages(
   let originalCanvas: HTMLCanvasElement | null = null;
   let modifiedCanvas: HTMLCanvasElement | null = null;
   let overlayCanvas: HTMLCanvasElement | null = null;
+  let originalOverlayCanvas: HTMLCanvasElement | null = null;
   const urls: string[] = [];
   const release = () => {
     urls.splice(0).forEach(url => URL.revokeObjectURL(url));
@@ -271,10 +301,9 @@ export async function compareRenderedPages(
 
     const originalRaster = originalCanvas ? readRaster(originalCanvas) : null;
     const modifiedRaster = modifiedCanvas ? readRaster(modifiedCanvas) : null;
-    let diff = compareRasters(originalRaster, modifiedRaster, {
-      ...diffOptions,
-      includeMask: true,
-    });
+    let diff: VisualPageDiff | AlignedPageDiff = mode === 'exact'
+      ? compareRasters(originalRaster, modifiedRaster, { ...diffOptions, includeMask: true })
+      : compareAlignedRasters(originalRaster, modifiedRaster, { ...diffOptions, includeMasks: true });
 
     if (
       originalSize && modifiedSize && (
@@ -291,39 +320,55 @@ export async function compareRenderedPages(
       });
     }
 
+    const { width, height } = diff.raster;
+    const alignedDiff = mode === 'aligned' ? (diff as AlignedPageDiff) : null;
+    const exactDiff = mode === 'exact' ? (diff as VisualPageDiff) : null;
+    const modifiedMask = alignedDiff ? alignedDiff.masks?.modified : exactDiff?.mask;
+    const originalMask = alignedDiff?.masks?.original;
     const overlayBase = modifiedCanvas ?? originalCanvas;
+
     if (overlayBase) {
-      const { width, height } = diff.raster;
-      if (diff.mask) {
-        overlayCanvas = renderOverlay(overlayBase, diff.mask, width, height);
+      if (modifiedMask) {
+        overlayCanvas = renderOverlay(overlayBase, modifiedMask, width, height);
       } else if (!originalCanvas) {
         overlayCanvas = renderPageTint(overlayBase, VISUAL_MASK.added, width, height);
       } else if (!modifiedCanvas) {
         overlayCanvas = renderPageTint(overlayBase, VISUAL_MASK.removed, width, height);
       }
     }
+    if (originalMask && originalCanvas) {
+      originalOverlayCanvas = renderOverlay(originalCanvas, originalMask, width, height);
+    }
 
-    const [originalUrl, modifiedUrl, overlayUrl] = await Promise.all([
+    const [originalUrl, modifiedUrl, overlayUrl, originalOverlayUrl] = await Promise.all([
       originalCanvas ? toObjectUrl(originalCanvas) : null,
       modifiedCanvas ? toObjectUrl(modifiedCanvas) : null,
       overlayCanvas ? toObjectUrl(overlayCanvas) : null,
+      originalOverlayCanvas ? toObjectUrl(originalOverlayCanvas) : null,
     ]);
-    [originalUrl, modifiedUrl, overlayUrl].forEach(url => {
+    [originalUrl, modifiedUrl, overlayUrl, originalOverlayUrl].forEach(url => {
       if (url) urls.push(url);
     });
     throwIfAborted(signal);
 
-    // The mask is a full-page buffer; it has done its job once the overlay is
-    // drawn, so it never reaches application state.
-    const result: VisualPageDiff = { ...diff };
-    delete result.mask;
-
-    return {
-      diff: result,
-      images: { original: originalUrl, modified: modifiedUrl, overlay: overlayUrl },
-      scale: target.scale,
-      release,
+    // Masks are full-page buffers; they have done their job once the overlays
+    // are drawn, so they never reach application state.
+    const images: VisualPageImages = {
+      original: originalUrl,
+      modified: modifiedUrl,
+      overlay: overlayUrl,
+      originalOverlay: originalOverlayUrl,
     };
+
+    if (exactDiff) {
+      const result: VisualPageDiff = { ...exactDiff };
+      delete result.mask;
+      return { mode: 'exact', diff: result, images, scale: target.scale, release };
+    }
+
+    const result: AlignedPageDiff = { ...(alignedDiff as AlignedPageDiff) };
+    delete result.masks;
+    return { mode: 'aligned', diff: result, images, scale: target.scale, release };
   } catch (error) {
     release();
     throw error;
@@ -331,5 +376,6 @@ export async function compareRenderedPages(
     releaseCanvas(originalCanvas);
     releaseCanvas(modifiedCanvas);
     releaseCanvas(overlayCanvas);
+    releaseCanvas(originalOverlayCanvas);
   }
 }
