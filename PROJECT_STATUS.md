@@ -1,6 +1,6 @@
 # PDF Diff Project Status
 
-> Last updated: 2026-09-05. Implementation baseline: `ee6bba6`.
+> Last updated: 2026-09-10. Implementation baseline: `c7e1896`.
 >
 > This is the live implementation and verification ledger. Read
 > [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) for the product direction and
@@ -33,7 +33,11 @@ Keep this file current and concise. Durable product decisions belong in
 | PDF page model | Page geometry, rotation, positioned text runs, source ranges, line endings, and extraction status | Automated | `7cbf2b4` |
 | Comparison result | One versioned result with `equal`, `different`, and `indeterminate`; Web, CLI, JSON, JUnit, HTML, and browser PDF export consume it | Automated for core/HTML/JSON/JUnit; browser PDF export is not automated | `50571a8` |
 | PDF session | Browser PDF opens once per session; supports page/document extraction, page rendering, cancellation, and idempotent destruction | Automated in Chromium, including the sample comparison flow | `ee6bba6` |
-| Browser request lifecycle | New file/demo requests cancel and invalidate older extraction; reset aborts active work and stale results cannot restore cleared state | Automated in Chromium for replacement and reset races | Current working tree |
+| Browser request lifecycle | New file/demo requests cancel and invalidate older extraction; reset aborts active work and stale results cannot restore cleared state | Automated in Chromium for replacement and reset races | `932b8ff` |
+| Session lifetime | Each side holds one open PDF for the life of a comparison; replacing a side, clearing, unmounting, or cancelling a load destroys the session it replaces | Automated in Chromium through `getOpenSessionCount()`; the check was confirmed to fail when the destroy call is removed | `d3c4a93` |
+| Visual comparison core | `compareRasters()` reports a visual status, changed-pixel metrics, coarse change regions in normalized coordinates, and an optional removed/added/recoloured mask | Automated | `ce109f6` |
+| Visual rasterization | Both sides of a page pair render at one shared scale inside a pixel budget (~150 DPI for Letter, hard-capped); canvases and the pixel mask are released before the result returns | Automated in Chromium | `6694619` |
+| Visual view | The Visual tab renders the current page pair, shows an overlay and a side-by-side layout, outlines changed areas, and reconciles the text verdict with the pixel verdict in words | Automated in Chromium | `c7e1896` |
 
 `src/cli/diffUtils.ts` re-exports the shared core; it is not a second diff
 implementation. The browser text-only path currently opens a session, extracts
@@ -42,7 +46,7 @@ open PDF after extraction until visual comparison has a real consumer.
 
 ## Regression coverage
 
-`npm test` currently runs 12 cases across the core and browser regression files:
+`npm test` currently runs 29 cases across the core and browser regression files:
 
 | Behavior | Coverage |
 | --- | --- |
@@ -58,6 +62,10 @@ open PDF after extraction until visual comparison has a real consumer.
 | HTML escaping plus JSON result contract | Automated |
 | Indeterminate HTML/JSON/JUnit reporting | Automated |
 | `PdfSession` extraction/render/cancel/destroy behavior | Automated in Chromium |
+| Pixel comparison: equality, added/removed/recoloured classification, thresholding, region merging, region budget, missing sides, size mismatch | Automated |
+| Page rasterization: shared render budget, overlay production, object-URL release, cancellation | Automated in Chromium |
+| Visual tab: overlay and side-by-side layouts, region outlines, per-page re-run, single-page restriction | Automated in Chromium |
+| Open PDF session accounting across load, replace, clear, and cancel | Automated in Chromium |
 | Sample-file browser comparison flow | Automated in Chromium |
 | React upload/replacement/race behavior | Automated in Chromium for replacement and reset races |
 | Browser PDF export file contents/layout | Not automated |
@@ -78,20 +86,32 @@ bugs, especially for arbitrary PDF producers and layouts.
   complete result for all pages.
 - `App.tsx` uses one active request identity/controller so replacement, demo,
   and reset operations cancel and invalidate stale extraction results.
-- Visual, structural, and OCR analysis do not exist yet. Textless pages are
-  correctly reported as indeterminate instead of being guessed equal.
+- Visual comparison exists for one page pair at a time in the browser only. It
+  is not part of `ComparisonResult`, not available in the CLI, and not included
+  in any export. Whole-document visual analysis is blocked on resource budgets.
+- Pixel comparison has no reflow tolerance. Inserting a line shifts everything
+  below it, so the changed-pixel percentage overstates the size of an edit near
+  the top of a page. The change regions remain accurate about *where* the page
+  differs; the percentage should not be read as an edit-size metric.
+- Structural and OCR analysis do not exist yet. Textless pages are correctly
+  reported as indeterminate by the text layer instead of being guessed equal,
+  and the visual layer can now decide such pages.
 - The production bundle still reports a chunk larger than 500 kB.
 
 ## Next work, in priority order
 
-1. **Implement a current-page visual diff vertical slice.** Keep visual status
-   separate from text status; use fixed render limits and release canvases/image
-   data immediately.
-2. **Add measured resource limits before all-page visual processing.** Introduce
+1. **Expand the regression corpus.** Prioritize image-only/scanned, rotation,
+   multi-column, CJK/RTL, ligatures, damaged/encrypted, and large PDFs. The
+   visual layer makes image-only fixtures newly meaningful: a scanned page that
+   the text layer calls `indeterminate` should now get a real visual verdict.
+2. **Give the visual layer reflow tolerance.** Align rendered content bands
+   before comparing pixels so a one-line insertion does not mark the rest of the
+   page as changed. This is the difference between a demo and a reviewable
+   result on real documents.
+3. **Add measured resource limits before all-page visual processing.** Introduce
    one application worker and explicit text/pixel budgets only when the visual
-   path demonstrates the need.
-3. **Expand the regression corpus.** Prioritize image-only/scanned, rotation,
-   multi-column, CJK/RTL, ligatures, damaged/encrypted, and large PDFs.
+   path demonstrates the need. Whole-document visual review and visual evidence
+   in exports both depend on this.
 4. **Then add OCR through the same positioned-page model**, followed by local AI
    change explanation with citations. General document AI and
    layout-preserving translation remain later phases.
@@ -102,10 +122,10 @@ foundations remain unfinished.
 
 ## Latest verification
 
-Verified on 2026-09-05 against the current working tree after `ee6bba6`:
+Verified on 2026-09-10 against the current working tree at `c7e1896`:
 
 ```text
-npm test                                                        passed (12 cases, including Chromium)
+npm test                                                        passed (29 cases, including Chromium)
 npm run lint                                                    passed
 ./node_modules/.bin/tsc -p tsconfig.app.json --noEmit --incremental false   passed
 ./node_modules/.bin/tsc -p tsconfig.cli.json --noEmit --incremental false   passed
@@ -122,7 +142,19 @@ Automated Chromium coverage now verifies:
   destruction;
 - the sample-file UI produces a two-page comparison without browser errors;
 - a slow replaced selection cannot overwrite a newer result, and clearing the
-  UI during extraction prevents stale state from returning.
+  UI during extraction prevents stale state from returning;
+- the application holds exactly one open PDF per side, and none after clearing
+  or after a cancelled load;
+- rendered page pairs stay inside their pixel budget, produce an overlay,
+  release their object URLs, and abort on demand;
+- the Visual tab renders the current pair, outlines changed areas, switches
+  layouts, and re-runs when the page changes.
+
+Browser tests launch Chromium through `tests/helpers/browser.ts`, which honours
+`PDF_DIFF_CHROMIUM_EXECUTABLE` for environments that ship a preinstalled
+browser build.
 
 Browser PDF export contents and layout were not manually rechecked in this
-task. The Web build passed with the existing large-chunk warning.
+task, and the export still contains no visual evidence. The visual view was
+checked manually in Chromium in light and dark themes. The Web build passed
+with the existing large-chunk warning.

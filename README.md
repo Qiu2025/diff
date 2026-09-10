@@ -18,6 +18,10 @@ Compare PDF documents privately and securely in your browser. No uploads, no ser
 - **Additions Only** - View only what was added
 - **Removals Only** - View only what was removed
 - **Changes Only** - See additions and removals side-by-side per page
+- **Visual Diff** - Render both pages on your device and compare them pixel by
+  pixel: removals in red, additions in green, recolouring in amber, with the
+  changed areas outlined. Text and pixels are reported as separate evidence, so
+  a page whose text is identical but whose layout moved is called out as such.
 
 ### 🎯 Advanced Features
 - **CLI Support** - Use via `npx pdf-diff` for command-line comparisons
@@ -137,4 +141,8 @@ npm run lint
 
 # Run core and browser regression tests
 npm test
+
+# If your machine already has a Chromium build Playwright did not download,
+# point the browser tests at it instead:
+PDF_DIFF_CHROMIUM_EXECUTABLE=/path/to/chromium npm test
 ```
