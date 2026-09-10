@@ -1,6 +1,6 @@
 # PDF Diff Project Status
 
-> Last updated: 2026-09-10. Implementation baseline: `e79ee88` plus the working tree.
+> Last updated: 2026-09-10. Implementation baseline: `b47e28c` plus the working tree.
 >
 > This is the live implementation and verification ledger. Read
 > [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) for the product direction and
@@ -44,7 +44,9 @@ Keep this file current and concise. Durable product decisions belong in
 | Comparison worker | Band segmentation and pixel comparison run in one application worker; rasters and masks cross as transferable buffers, cancellation discards the worker, and an inline fallback covers runtimes without workers | Automated in Chromium, including a frame-count check that fails when the work runs inline | `b6fab9f` |
 | Whole-document visual scan | Every page pair is swept sequentially at a reduced budget with progress and cancellation, giving each pair a visual verdict next to its text verdict; rows link to the full-resolution comparison | Automated in Chromium on the image-only fixture and the demo | `e79ee88` |
 | Visual evidence in the export | A completed scan adds a visual section to the exported PDF: per-page verdicts plus landscape pages of marked-up renders for up to six changed pages, capped and announced when truncated | Automated in Chromium, including reading the produced PDF back | Current working tree |
-| On-demand export loading | jsPDF and the evidence renderer load only when the user exports | Automated indirectly by the export test; bundle sizes recorded below | Current working tree |
+| On-demand export loading | jsPDF and the evidence renderer load only when the user exports | Automated indirectly by the export test; bundle sizes recorded below | `b47e28c` |
+| OCR | Pages with no text layer can be recognized on device with Tesseract; results fill the same `PDFPage` contract, with provenance, confidence and language, and rejoin the normal comparison | Automated: unit tests for target selection and merging, Chromium test for the full flow (skipped when assets are absent) | Current working tree |
+| OCR asset hosting | Engine, worker and language data are served by the deployment itself; the app reports OCR unavailable rather than falling back to a CDN | Automated in Chromium: the OCR flow must issue zero third-party requests | Current working tree |
 
 `src/cli/diffUtils.ts` re-exports the shared core; it is not a second diff
 implementation. The browser text-only path currently opens a session, extracts
@@ -53,7 +55,7 @@ open PDF after extraction until visual comparison has a real consumer.
 
 ## Regression coverage
 
-`npm test` currently runs 50 cases across the core and browser regression files:
+`npm test` currently runs 56 cases across the core and browser regression files:
 
 | Behavior | Coverage |
 | --- | --- |
@@ -81,11 +83,14 @@ open PDF after extraction until visual comparison has a real consumer.
 | The UI thread keeps painting during a comparison, and a cancelled job does not break later ones | Automated in Chromium |
 | Whole-document scan verdicts, including an image-only document the text layer cannot read; scan state resets with new documents; a row selects its page | Automated in Chromium |
 | Exported report contents: text-only without a scan, visual verdicts and evidence pages with one, read back out of the produced PDF | Automated in Chromium |
+| OCR target selection, merging recognized pages, and provenance | Automated |
+| OCR end to end: an image-only pair becomes the same +13/−1 comparison the text-layer version produces, with no third-party requests | Automated in Chromium, skipped when OCR assets are not installed |
 | Sample-file browser comparison flow | Automated in Chromium |
 | React upload/replacement/race behavior | Automated in Chromium for replacement and reset races |
 | Browser PDF export file contents/layout | Automated in Chromium: the produced PDF is parsed back and its sections asserted |
 | CLI process exit codes and full report generation | Manually smoke-tested, not automated |
-| Large, scanned, multilingual, rotated, damaged, or encrypted PDFs | Not covered by the regression corpus |
+| Scanned, reflowed, mismatched-paper-size, landscape, and damaged PDFs | Covered by `tests/fixtures/` |
+| Large, multilingual, rotated (`/Rotate`), or encrypted PDFs | Not covered by the regression corpus |
 
 Automated coverage reduces known regressions; it does not prove the absence of
 bugs, especially for arbitrary PDF producers and layouts.
@@ -113,9 +118,13 @@ bugs, especially for arbitrary PDF producers and layouts.
 - Band segmentation assumes horizontal bands of content. Multi-column layouts
   produce bands spanning both columns, so a change in one column is attributed
   to the whole row. Column detection is not implemented.
-- Structural and OCR analysis do not exist yet. Textless pages are correctly
-  reported as indeterminate by the text layer instead of being guessed equal,
-  and the visual layer can now decide such pages.
+- OCR is English-only, opt-in, and browser-only. It is not available in the CLI,
+  recognized text is not persisted between sessions, and it inherits every
+  limitation of the reading-order heuristic above.
+- OCR assets are not committed and not fetched at build time by default outside
+  Docker: `npm run prepare-ocr` must be run, or the feature reports itself
+  unavailable.
+- Structural analysis does not exist yet.
 - The production bundle still reports a chunk larger than 500 kB, though the
   entry chunk fell from 975 kB to 590 kB once the export path became a dynamic
   import.
@@ -127,9 +136,9 @@ bugs, especially for arbitrary PDF producers and layouts.
 3. **Detect columns before banding.** Horizontal bands attribute a change in one
    column to the whole row, which is the main remaining source of noise on real
    layouts.
-4. **Then add OCR through the same positioned-page model**, followed by local AI
-   change explanation with citations. General document AI and
-   layout-preserving translation remain later phases.
+4. **Then local AI change explanation with citations**, reusing the OCR asset
+   pattern: self-hosted, opt-in, and explicit about what is downloaded. General
+   document AI and layout-preserving translation remain later phases.
 
 Do not add a plugin framework, worker pool, global state library, monorepo,
 custom PDF parser, backend, or generic PDF toolbox while these smaller product
@@ -137,10 +146,10 @@ foundations remain unfinished.
 
 ## Latest verification
 
-Verified on 2026-09-10 against the current working tree after `e79ee88`:
+Verified on 2026-09-10 against the current working tree after `b47e28c`:
 
 ```text
-npm test                                                        passed (50 cases, including Chromium)
+npm test                                                        passed (56 cases, including Chromium and OCR)
 npm run lint                                                    passed
 ./node_modules/.bin/tsc -p tsconfig.app.json --noEmit --incremental false   passed
 ./node_modules/.bin/tsc -p tsconfig.cli.json --noEmit --incremental false   passed
@@ -181,6 +190,12 @@ The whole-document scan sweeps at ≈96 DPI and skips overlay and PNG work
 entirely. On the image-only fixture, which has no text layer at all, it reports
 the single page as changed; on the demo it reports both pages as changed with
 per-page band counts.
+
+OCR was measured on the image-only fixture pair, rendered at ≈200 DPI: about
+2.4 seconds for both pages including engine startup, at 95.7% mean word
+confidence. The resulting comparison is +13/−1 at 14.0%, identical to the
+comparison the same document produces through its native text layer. The
+Chromium test asserts zero third-party requests during that flow.
 
 Browser tests launch Chromium through `tests/helpers/browser.ts`, which honours
 `PDF_DIFF_CHROMIUM_EXECUTABLE` for environments that ship a preinstalled

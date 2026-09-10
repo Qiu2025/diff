@@ -1,0 +1,84 @@
+.ocr-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.95rem 1rem;
+  background: var(--surface-muted);
+  border: 1px solid var(--warning-color);
+}
+
+.ocr-panel-body {
+  min-width: min(100%, 24rem);
+  flex: 1 1 32rem;
+}
+
+.ocr-panel h3 {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ocr-panel p {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.ocr-panel-note {
+  margin-top: 0.4rem !important;
+  color: var(--text-muted) !important;
+  font-size: 0.75rem !important;
+}
+
+.ocr-panel-note.warning {
+  color: var(--warning-color) !important;
+}
+
+.ocr-panel-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.ocr-btn {
+  min-height: 36px;
+  padding: 0.45rem 0.9rem;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.ocr-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.ocr-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ocr-btn.primary:not(:disabled) {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--card-bg);
+}
+
+.ocr-btn.primary:hover:not(:disabled) {
+  background: var(--text-secondary);
+  border-color: var(--text-secondary);
+}
+
+.ocr-panel.finished {
+  border-color: var(--success-color);
+}

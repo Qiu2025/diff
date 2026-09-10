@@ -221,11 +221,11 @@ export function VisualDiffView({
   const aligned = comparison.mode === 'aligned' ? comparison.diff : null;
   const note = reconcile(textStatus, diff.status);
   const headline = aligned ? describeAlignedStatus(aligned) : describeVisualStatus(diff);
-  const removedRegions = aligned?.removedRegions ?? [];
-  const regionSummary = diff.regions.length + removedRegions.length === 0
+  const originalRegions = aligned?.originalRegions ?? [];
+  const regionSummary = diff.regions.length + originalRegions.length === 0
     ? null
-    : `${diff.regions.length + removedRegions.length} marked area${
-      diff.regions.length + removedRegions.length === 1 ? '' : 's'}`;
+    : `${diff.regions.length + originalRegions.length} marked area${
+      diff.regions.length + originalRegions.length === 1 ? '' : 's'}`;
   // Exact mode paints removals and additions on one image; aligned mode marks
   // each page with what happened to it, so both pages have to be shown.
   const singlePane = layout === 'marked' && !aligned;
@@ -323,7 +323,7 @@ export function VisualDiffView({
           <PagePane
             title="Original"
             url={layout === 'marked' ? images.originalOverlay ?? images.original : images.original}
-            regions={removedRegions}
+            regions={originalRegions}
             showRegions={showRegions}
           />
           <PagePane

@@ -86,8 +86,8 @@ test('a removed line is reported on the original page', () => {
 
   assert.equal(aligned.bandCounts.removed, 1);
   assert.equal(aligned.bandCounts.added, 0);
-  assert.equal(aligned.removedRegions.length, 1);
-  assert.equal(aligned.removedRegions[0].kind, 'removed');
+  assert.equal(aligned.originalRegions.length, 1);
+  assert.equal(aligned.originalRegions[0].kind, 'removed');
   assert.equal(aligned.regions.length, 0, 'nothing was added to the modified page');
 });
 
@@ -160,12 +160,12 @@ test('missing sides stay whole-page results', () => {
   assert.equal(added.status, 'different');
   assert.equal(added.bandCounts.added, 1);
   assert.equal(added.regions.length, 1);
-  assert.equal(added.removedRegions.length, 0);
+  assert.equal(added.originalRegions.length, 0);
   assert.deepEqual(added.diagnostics.map(entry => entry.code), ['page-added']);
 
   const removed = compareAlignedRasters(page([{ width: 100 }]), null);
   assert.equal(removed.bandCounts.removed, 1);
-  assert.equal(removed.removedRegions.length, 1);
+  assert.equal(removed.originalRegions.length, 1);
   assert.equal(removed.regions.length, 0);
 
   const neither = compareAlignedRasters(null, null);

@@ -64,10 +64,10 @@ export interface AlignedPageDiff {
   inkChangeRatio: number;
   bandCounts: Record<BandStatus, number>;
   bands: BandChange[];
-  /** Changed and added areas, in modified-page coordinates. */
+  /** Changed areas in modified-page coordinates: additions and edits. */
   regions: VisualRegion[];
-  /** Removed areas, in original-page coordinates. */
-  removedRegions: VisualRegion[];
+  /** Changed areas in original-page coordinates: removals and edits. */
+  originalRegions: VisualRegion[];
   masks?: { original: Uint8Array; modified: Uint8Array };
   diagnostics: VisualDiagnostic[];
 }
@@ -322,7 +322,7 @@ export function compareAlignedRasters(
       bandCounts: counts,
       bands: [],
       regions: pageRemoved ? [] : (missing?.regions ?? []),
-      removedRegions: pageRemoved ? (missing?.regions ?? []) : [],
+      originalRegions: pageRemoved ? (missing?.regions ?? []) : [],
       diagnostics: missing?.diagnostics ?? [],
     };
   }
@@ -340,7 +340,7 @@ export function compareAlignedRasters(
       bandCounts: emptyCounts(),
       bands: [],
       regions: [],
-      removedRegions: [],
+      originalRegions: [],
       diagnostics: [mismatch],
     };
   }
@@ -482,7 +482,7 @@ export function compareAlignedRasters(
     bandCounts,
     bands,
     regions: modifiedRegions.regions,
-    removedRegions: originalRegions.regions.filter(region => region.kind === 'removed'),
+    originalRegions: originalRegions.regions,
     ...(settings.includeMasks ? { masks: { original: originalMask, modified: modifiedMask } } : {}),
     diagnostics,
   };

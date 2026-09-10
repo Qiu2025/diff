@@ -184,7 +184,7 @@ test('reflow-aware comparison separates edits from displacement', async t => {
           status: aligned.diff.status,
           bandCounts: 'bandCounts' in aligned.diff ? aligned.diff.bandCounts : null,
           regions: aligned.diff.regions.length,
-          removedRegions: 'removedRegions' in aligned.diff ? aligned.diff.removedRegions.length : -1,
+          originalRegions: 'originalRegions' in aligned.diff ? aligned.diff.originalRegions.length : -1,
           hasMasks: 'masks' in aligned.diff,
           hasOriginalOverlay: aligned.images.originalOverlay !== null,
           hasOverlay: aligned.images.overlay !== null,
@@ -231,7 +231,7 @@ test('reflow-aware comparison separates edits from displacement', async t => {
   // available for it.
   assert.equal(result.scan.status, 'different');
   assert.ok(result.scan.regions > 0);
-  assert.ok(result.scan.removedRegions > 0);
+  assert.ok(result.scan.originalRegions > 0);
 
   assert.deepEqual(browserErrors, []);
 });

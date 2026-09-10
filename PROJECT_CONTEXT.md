@@ -1,6 +1,6 @@
 # PDF Diff Project Context
 
-> Last audited: 2026-09-10 through commit `a0c77cf` (`feat(visual): compare pages after removing vertical reflow`).
+> Last audited: 2026-09-10 through commit `b47e28c` (`feat(export): carry visual verdicts and evidence into the report`).
 >
 > This is a context document, not a backlog. New contributors and Codex chats
 > should verify the current checkout before applying any path-specific detail.
@@ -62,10 +62,15 @@ surfaces.
   `src/utils/visualPageRenderer.ts`.
 - Ordered sequence alignment is shared by the text and visual layers in
   `src/utils/sequenceAlignment.ts`.
+- Optional OCR lives in `src/utils/ocr.ts` (engine) and
+  `src/utils/ocrDocument.ts` (which pages to read, and how results rejoin the
+  comparison). Its assets are prepared by `scripts/prepare-ocr-assets.mjs`.
 
 The browser build is served as static files. The current source contains no
 document upload API. Its automatic fetches are the two same-origin demo PDFs,
-and the PDF.js worker is bundled locally.
+and the PDF.js worker is bundled locally. The OCR engine and language data are
+also same-origin, prepared into `public/ocr/` by `npm run prepare-ocr`; the
+application never falls back to the CDN Tesseract.js would use by default.
 
 ### CLI
 
@@ -295,7 +300,7 @@ Browser source adapter          Node source adapter
                    |
  UI / HTML / PDF / JSON / JUnit renderers
 
-OCR -> produces the same positioned text-run contract
+OCR -> produces the same positioned text-run contract (implemented)
 AI  -> consumes document artifacts and cites deterministic evidence
 Translation -> separate layout reconstruction and PDF writing pipeline
 ```
@@ -367,6 +372,10 @@ Pixel comparison of one page pair, with and without reflow tolerance, is
 implemented. Whole-document visual review, visual page fingerprints for
 alignment, column-aware banding, and visual evidence in exports are not.
 
+OCR is implemented for English, on demand, and feeds the same page model, so
+alignment, comparison, statistics and export work on a scanned document without
+knowing where the words came from.
+
 ```text
 reliable text extraction and page alignment
   -> visual and lightweight structural diff
@@ -416,7 +425,9 @@ cheap to decide when a concrete runtime or deployment requirement exists.
 
 - Browser export and the evidence renderer are dynamic imports, so jsPDF stays
   out of the initial feature graph.
-- The Docker build uses `npm install`, and the repository has no `.dockerignore`.
+- The Docker build uses `npm ci` and the repository has a `.dockerignore`. OCR
+  assets are prepared inside the image, and can be skipped with
+  `--build-arg ENABLE_OCR=false`.
 - Nginx currently has no CSP or explicit cross-origin isolation headers.
 - The manifest exists without a service worker, so the project is not an
   offline-reloadable PWA.

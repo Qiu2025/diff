@@ -82,58 +82,87 @@ function createRandom(seed) {
   };
 }
 
-/**
- * Builds a grayscale raster that looks like a scanned page: paper-coloured
- * background, sensor noise, and blocks of "text" with no text layer at all.
- */
-async function scanImage({ width, height, seed, edit }) {
-  const random = createRandom(seed);
-  const pixels = Buffer.alloc(width * height);
-  const blockSize = 4;
+function escapeXml(value) {
+  return value.replace(/[&<>]/g, character => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[character]
+  ));
+}
 
-  // Blocky, few-level noise keeps the fixture small enough to commit while
-  // still denying the comparison a perfectly flat background.
-  for (let blockY = 0; blockY < height; blockY += blockSize) {
-    for (let blockX = 0; blockX < width; blockX += blockSize) {
-      const shade = 238 + Math.floor(random() * 4) * 3;
-      for (let y = blockY; y < blockY + blockSize && y < height; y += 1) {
-        pixels.fill(shade, y * width + blockX, y * width + Math.min(blockX + blockSize, width));
+const SCAN_WIDTH = 1000;
+const SCAN_HEIGHT = 1360;
+
+/**
+ * Renders text to a raster the way a scanner would: real glyphs, paper tone,
+ * sensor noise, and no text layer of any kind. This is what OCR has to read.
+ */
+async function scanImage({ title, lines, seed }) {
+  const body = lines
+    .map((line, index) => {
+      const y = 190 + index * 58;
+      const indent = /^Section /.test(line) ? 90 : 120;
+      return `<text x="${indent}" y="${y}" font-size="26" fill="#2b2b2b">${escapeXml(line)}</text>`;
+    })
+    .join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SCAN_WIDTH}" height="${SCAN_HEIGHT}">`
+    + `<rect width="${SCAN_WIDTH}" height="${SCAN_HEIGHT}" fill="#f2f0ea"/>`
+    + `<g font-family="DejaVu Sans, Helvetica, Arial, sans-serif">`
+    + `<text x="90" y="110" font-size="36" fill="#1c1c1c">${escapeXml(title)}</text>`
+    + body
+    + `</g></svg>`;
+
+  const { data, info } = await sharp(Buffer.from(svg))
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  // Blocky, few-level noise: enough that the page is not a flat colour, small
+  // enough that the fixture stays committable.
+  const random = createRandom(seed);
+  const block = 4;
+  for (let blockY = 0; blockY < info.height; blockY += block) {
+    for (let blockX = 0; blockX < info.width; blockX += block) {
+      const shift = Math.floor(random() * 4) * 3 - 4;
+      for (let y = blockY; y < blockY + block && y < info.height; y += 1) {
+        const row = y * info.width;
+        for (let x = blockX; x < blockX + block && x < info.width; x += 1) {
+          data[row + x] = Math.max(0, Math.min(255, data[row + x] + shift));
+        }
       }
     }
   }
 
-  const inkRow = (top, left, right, weight) => {
-    for (let y = top; y < top + weight && y < height; y += 1) {
-      pixels.fill(55, y * width + left, y * width + Math.min(right, width));
-    }
-  };
-
-  for (let line = 0; line < 18; line += 1) {
-    const top = 40 + line * 22;
-    const right = 60 + Math.floor(random() * (width - 120));
-    inkRow(top, 40, right, 7);
-  }
-
-  if (edit) {
-    // A localized change, as if one figure on the page had been altered.
-    for (let y = 210; y < 232; y += 1) {
-      pixels.fill(20, y * width + 60, y * width + 200);
-    }
-  }
-
-  return sharp(pixels, { raw: { width, height, channels: 1 } }).png().toBuffer();
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 1 } })
+    .png()
+    .toBuffer();
 }
 
 /**
- * A page whose only content is a raster image. The text layer must report this
- * as indeterminate; only the visual layer can decide it.
+ * A page whose only content is a raster image of text. The text layer must
+ * report this as indeterminate; only the visual layer or OCR can read it.
  */
 async function scanPair() {
-  for (const [name, edit, id] of [['scan-original.pdf', false, 21], ['scan-modified.pdf', true, 22]]) {
-    const png = await scanImage({ width: 496, height: 640, seed: 20250101, edit });
+  const changed = [...BODY];
+  changed.splice(3, 0, 'The Services means the work set out in the statement of work.');
+  changed[changed.indexOf('Late payment accrues interest at two percent per month.')] =
+    'Late payment accrues interest at four percent per month.';
+
+  const variants = [
+    ['scan-original.pdf', BODY, 21, 20250101],
+    ['scan-modified.pdf', changed, 22, 20250101],
+  ];
+
+  for (const [name, lines, id, seed] of variants) {
+    const png = await scanImage({ title: 'Service Agreement', lines, seed });
     // jsPDF embeds image data uncompressed unless the document is compressed.
     const doc = createDocument({ compress: true }, id);
-    doc.addImage(`data:image/png;base64,${png.toString('base64')}`, 'PNG', 10, 10, 190, 245);
+    doc.addImage(
+      `data:image/png;base64,${png.toString('base64')}`,
+      'PNG',
+      10,
+      10,
+      190,
+      190 * (SCAN_HEIGHT / SCAN_WIDTH)
+    );
     write(doc, name);
   }
 }

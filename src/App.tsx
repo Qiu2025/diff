@@ -8,6 +8,7 @@ import {
   ViewModeTabs,
   VisualDiffView,
   VisualScan,
+  OcrPanel,
   PageSelector,
   ThemeToggle,
   ExportButton,
@@ -21,6 +22,9 @@ type PdfSide = 'original' | 'modified';
 type PdfRequest = { controller: AbortController };
 import { compareDocuments } from './utils/diffUtils';
 import type { VisualScanResult } from './utils/visualScan';
+import { applyOcrPages, findPagesNeedingOcr } from './utils/ocrDocument';
+import type { OcrTarget } from './utils/ocrDocument';
+import type { PDFPage } from './utils/pdfModel';
 import './App.css';
 
 function App() {
@@ -34,6 +38,10 @@ function App() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showAllPages, setShowAllPages] = useState(false);
   const [visualScan, setVisualScan] = useState<VisualScanResult | null>(null);
+  const [ocrPages, setOcrPages] = useState<Record<PdfSide, Record<number, PDFPage>>>({
+    original: {},
+    modified: {},
+  });
   const [isExporting, setIsExporting] = useState(false);
   // One request identity per side: replacing the original must not cancel work
   // already under way on the modified document.
@@ -128,6 +136,7 @@ function App() {
     const request = beginRequest(side);
     (side === 'original' ? setOriginalFile : setModifiedFile)(file);
     adopt(null);
+    setOcrPages(current => ({ ...current, [side]: {} }));
     setError(null);
     try {
       const loaded = await loadPdf(file, side, request);
@@ -162,6 +171,7 @@ function App() {
     setError(null);
     setCurrentPage(1);
     setVisualScan(null);
+    setOcrPages({ original: {}, modified: {} });
   }, [abortSide, adoptOriginal, adoptModified]);
 
   const handleTryDemo = useCallback(async () => {
@@ -176,6 +186,7 @@ function App() {
       setError(null);
       adoptOriginal(null);
       adoptModified(null);
+      setOcrPages({ original: {}, modified: {} });
 
       const [originalResponse, modifiedResponse] = await Promise.all([
         fetch('/demo-original.pdf', { signal: requests.original.controller.signal }),
@@ -207,10 +218,31 @@ function App() {
     }
   }, [adoptOriginal, adoptModified, beginRequest, finishRequest, isCurrent, loadPdfPair]);
 
+  /** Documents as compared: the extracted text, with recognized pages folded in. */
+  const documents = useMemo(() => ({
+    original: applyOcrPages(original?.doc ?? null, ocrPages.original),
+    modified: applyOcrPages(modified?.doc ?? null, ocrPages.modified),
+  }), [modified, ocrPages, original]);
+
   const comparisonResult = useMemo(
-    () => original && modified ? compareDocuments(original.doc, modified.doc) : null,
-    [original, modified]
+    () => documents.original && documents.modified
+      ? compareDocuments(documents.original, documents.modified)
+      : null,
+    [documents]
   );
+
+  const ocrTargets = useMemo(() => findPagesNeedingOcr(documents), [documents]);
+  const sessions = useMemo(() => ({
+    original: original?.session ?? null,
+    modified: modified?.session ?? null,
+  }), [modified, original]);
+
+  const handlePageRecognized = useCallback((target: OcrTarget, page: PDFPage) => {
+    setOcrPages(current => ({
+      ...current,
+      [target.side]: { ...current[target.side], [target.pageNumber]: page },
+    }));
+  }, []);
   const totalPages = comparisonResult?.pageDiffs.length ?? 0;
   const currentPageDiff = comparisonResult?.pageDiffs[currentPage - 1] ?? comparisonResult?.pageDiffs[0] ?? null;
   // Rendering every page at once has no resource budget yet, so the visual
@@ -371,6 +403,13 @@ function App() {
                 />
               </div>
             </div>
+
+            <OcrPanel
+              sessions={sessions}
+              documents={documents}
+              targets={ocrTargets}
+              onPageRecognized={handlePageRecognized}
+            />
 
             {comparisonResult.diagnostics.length > 0 && (
               <div className="comparison-warning" role="status">
