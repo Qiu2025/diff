@@ -6,6 +6,7 @@ import {
   PrivacyBanner,
   PrivacyFeatures,
   ViewModeTabs,
+  VisualDiffView,
   PageSelector,
   ThemeToggle,
   ExportButton,
@@ -187,7 +188,12 @@ function App() {
   );
   const totalPages = comparisonResult?.pageDiffs.length ?? 0;
   const currentPageDiff = comparisonResult?.pageDiffs[currentPage - 1] ?? comparisonResult?.pageDiffs[0] ?? null;
-  const stats = showAllPages ? comparisonResult?.overallStats : currentPageDiff?.stats;
+  // Rendering every page at once has no resource budget yet, so the visual
+  // layer deliberately stays on one page pair at a time.
+  const isVisualMode = viewMode === 'visual';
+  const textViewMode = viewMode === 'visual' ? 'side-by-side' : viewMode;
+  const reviewAllPages = showAllPages && !isVisualMode;
+  const stats = reviewAllPages ? comparisonResult?.overallStats : currentPageDiff?.stats;
 
   useEffect(() => {
     if (totalPages > 0 && currentPage > totalPages) setCurrentPage(totalPages);
@@ -313,20 +319,33 @@ function App() {
                   totalPages={totalPages}
                   pageLabel={currentPageDiff?.label}
                   onPageChange={setCurrentPage}
-                  disabled={showAllPages}
+                  disabled={reviewAllPages}
                 />
                 <label className="show-all-checkbox">
                   <input
                     type="checkbox"
-                    checked={showAllPages}
+                    checked={reviewAllPages}
+                    disabled={isVisualMode}
                     onChange={(e) => setShowAllPages(e.target.checked)}
                   />
-                  <span>Review all pages</span>
+                  <span>
+                    {isVisualMode ? 'Visual review runs one page at a time' : 'Review all pages'}
+                  </span>
                 </label>
               </div>
             )}
 
-            {showAllPages ? (
+            {isVisualMode ? (
+              currentPageDiff && (
+                <VisualDiffView
+                  originalSession={original?.session ?? null}
+                  originalPageNumber={currentPageDiff.originalPageNumber}
+                  modifiedSession={modified?.session ?? null}
+                  modifiedPageNumber={currentPageDiff.modifiedPageNumber}
+                  textStatus={currentPageDiff.status}
+                />
+              )
+            ) : reviewAllPages ? (
               <div className="all-pages-view">
                 {comparisonResult.pageDiffs.map(({ pageNumber, label, parts, originalText, modifiedText, stats: pageStats, status }) => (
                   <section key={pageNumber} className="page-section" aria-labelledby={`page-${pageNumber}-title`}>
@@ -345,7 +364,7 @@ function App() {
                     </div>
                     <DiffView
                       parts={parts}
-                      mode={viewMode}
+                      mode={textViewMode}
                       originalText={originalText}
                       modifiedText={modifiedText}
                     />
@@ -356,7 +375,7 @@ function App() {
               currentPageDiff && (
                 <DiffView
                   parts={currentPageDiff.parts}
-                  mode={viewMode}
+                  mode={textViewMode}
                   originalText={currentPageDiff.originalText}
                   modifiedText={currentPageDiff.modifiedText}
                 />
