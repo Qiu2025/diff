@@ -488,10 +488,17 @@ export function compareAlignedRasters(
   };
 }
 
+function lines(count: number): string {
+  return count === 1 ? '1 line' : `${count} lines`;
+}
+
 export function describeAlignedStatus(diff: AlignedPageDiff): string {
   if (diff.status === 'indeterminate') return 'Visual comparison unavailable';
   const { added, removed, changed, moved } = diff.bandCounts;
-  if (added + removed + changed === 0) {
+  const total = added + removed + changed;
+  const suffix = moved > 0 ? `; ${moved} more only moved` : '';
+
+  if (total === 0) {
     return moved > 0 ? 'Same content, moved on the page' : 'Pages render identically';
   }
 
@@ -499,6 +506,10 @@ export function describeAlignedStatus(diff: AlignedPageDiff): string {
   if (added) parts.push(`${added} added`);
   if (removed) parts.push(`${removed} removed`);
   if (changed) parts.push(`${changed} edited`);
-  const suffix = moved > 0 ? `, ${moved} unchanged but moved` : '';
-  return `${parts.join(', ')} ${added + removed + changed === 1 ? 'line' : 'lines'}${suffix}`;
+
+  if (parts.length === 1) {
+    const [word] = parts[0].split(' ').slice(1);
+    return `${lines(total)} ${word}${suffix}`;
+  }
+  return `${lines(total)} changed: ${parts.join(', ')}${suffix}`;
 }

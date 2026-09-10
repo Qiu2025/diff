@@ -1,6 +1,6 @@
 # PDF Diff Project Status
 
-> Last updated: 2026-09-10. Implementation baseline: `c7e1896`.
+> Last updated: 2026-09-10. Implementation baseline: `a0c77cf` plus the working tree.
 >
 > This is the live implementation and verification ledger. Read
 > [`PROJECT_CONTEXT.md`](./PROJECT_CONTEXT.md) for the product direction and
@@ -37,7 +37,10 @@ Keep this file current and concise. Durable product decisions belong in
 | Session lifetime | Each side holds one open PDF for the life of a comparison; replacing a side, clearing, unmounting, or cancelling a load destroys the session it replaces | Automated in Chromium through `getOpenSessionCount()`; the check was confirmed to fail when the destroy call is removed | `d3c4a93` |
 | Visual comparison core | `compareRasters()` reports a visual status, changed-pixel metrics, coarse change regions in normalized coordinates, and an optional removed/added/recoloured mask | Automated | `ce109f6` |
 | Visual rasterization | Both sides of a page pair render at one shared scale inside a pixel budget (~150 DPI for Letter, hard-capped); canvases and the pixel mask are released before the result returns | Automated in Chromium | `6694619` |
-| Visual view | The Visual tab renders the current page pair, shows an overlay and a side-by-side layout, outlines changed areas, and reconciles the text verdict with the pixel verdict in words | Automated in Chromium | `c7e1896` |
+| Visual view | The Visual tab renders the current page pair, offers the aligned and exact engines with marked-up and plain layouts, outlines changed areas, and reconciles the text verdict with the pixel verdict in words | Automated in Chromium | `c7e1896`, current working tree |
+| Reflow-aware comparison | Renders are segmented into content bands, matched between versions, and compared where each band actually sits; bands are reported as equal, moved, changed, added, or removed | Automated, plus a Chromium check on the reflow fixture | `a0c77cf` |
+| Fixture corpus | Deterministic reflow, image-only/scanned, Letter/A4, landscape, and truncated fixtures in `tests/fixtures/` | Automated | `a2d03df` |
+| Per-side request lifecycle | Each document owns its own request identity, so choosing the second file no longer cancels the first | Automated in Chromium | Current working tree |
 
 `src/cli/diffUtils.ts` re-exports the shared core; it is not a second diff
 implementation. The browser text-only path currently opens a session, extracts
@@ -46,7 +49,7 @@ open PDF after extraction until visual comparison has a real consumer.
 
 ## Regression coverage
 
-`npm test` currently runs 29 cases across the core and browser regression files:
+`npm test` currently runs 47 cases across the core and browser regression files:
 
 | Behavior | Coverage |
 | --- | --- |
@@ -66,6 +69,11 @@ open PDF after extraction until visual comparison has a real consumer.
 | Page rasterization: shared render budget, overlay production, object-URL release, cancellation | Automated in Chromium |
 | Visual tab: overlay and side-by-side layouts, region outlines, per-page re-run, single-page restriction | Automated in Chromium |
 | Open PDF session accounting across load, replace, clear, and cancel | Automated in Chromium |
+| Band segmentation, matching, and the moved/added/removed/edited classification | Automated |
+| Reflow fixture: an inserted line stays one insertion for both the text and the visual layer | Automated for text; automated in Chromium for pixels |
+| Image-only page: indeterminate for text, decided by the visual layer | Automated for text; automated in Chromium for pixels |
+| Letter/A4, landscape, and truncated fixtures | Automated |
+| Choosing both documents without waiting for the first | Automated in Chromium |
 | Sample-file browser comparison flow | Automated in Chromium |
 | React upload/replacement/race behavior | Automated in Chromium for replacement and reset races |
 | Browser PDF export file contents/layout | Not automated |
@@ -89,10 +97,13 @@ bugs, especially for arbitrary PDF producers and layouts.
 - Visual comparison exists for one page pair at a time in the browser only. It
   is not part of `ComparisonResult`, not available in the CLI, and not included
   in any export. Whole-document visual analysis is blocked on resource budgets.
-- Pixel comparison has no reflow tolerance. Inserting a line shifts everything
-  below it, so the changed-pixel percentage overstates the size of an edit near
-  the top of a page. The change regions remain accurate about *where* the page
-  differs; the percentage should not be read as an edit-size metric.
+- Pixel comparison models vertical reflow only. A line whose content shifts
+  sideways is reported as edited rather than moved, which is conservative but
+  can overstate an edit. The exact engine remains available and makes no
+  alignment assumptions at all.
+- Band segmentation assumes horizontal bands of content. Multi-column layouts
+  produce bands spanning both columns, so a change in one column is attributed
+  to the whole row. Column detection is not implemented.
 - Structural and OCR analysis do not exist yet. Textless pages are correctly
   reported as indeterminate by the text layer instead of being guessed equal,
   and the visual layer can now decide such pages.
@@ -100,18 +111,16 @@ bugs, especially for arbitrary PDF producers and layouts.
 
 ## Next work, in priority order
 
-1. **Expand the regression corpus.** Prioritize image-only/scanned, rotation,
-   multi-column, CJK/RTL, ligatures, damaged/encrypted, and large PDFs. The
-   visual layer makes image-only fixtures newly meaningful: a scanned page that
-   the text layer calls `indeterminate` should now get a real visual verdict.
-2. **Give the visual layer reflow tolerance.** Align rendered content bands
-   before comparing pixels so a one-line insertion does not mark the rest of the
-   page as changed. This is the difference between a demo and a reviewable
-   result on real documents.
-3. **Add measured resource limits before all-page visual processing.** Introduce
-   one application worker and explicit text/pixel budgets only when the visual
-   path demonstrates the need. Whole-document visual review and visual evidence
-   in exports both depend on this.
+1. **Move visual comparison off the UI thread and give it a budget.** One page
+   pair takes roughly half a second at ~150 DPI, all of it synchronous inside
+   the render loop. One application worker plus explicit pixel budgets is the
+   prerequisite for whole-document visual review and for visual evidence in
+   exports.
+2. **Continue expanding the corpus.** Still missing: true `/Rotate` pages,
+   multi-column text, CJK/RTL, ligatures, encrypted files, and large documents.
+3. **Detect columns before banding.** Horizontal bands attribute a change in one
+   column to the whole row, which is the main remaining source of noise on real
+   layouts.
 4. **Then add OCR through the same positioned-page model**, followed by local AI
    change explanation with citations. General document AI and
    layout-preserving translation remain later phases.
@@ -122,10 +131,10 @@ foundations remain unfinished.
 
 ## Latest verification
 
-Verified on 2026-09-10 against the current working tree at `c7e1896`:
+Verified on 2026-09-10 against the current working tree after `a0c77cf`:
 
 ```text
-npm test                                                        passed (29 cases, including Chromium)
+npm test                                                        passed (47 cases, including Chromium)
 npm run lint                                                    passed
 ./node_modules/.bin/tsc -p tsconfig.app.json --noEmit --incremental false   passed
 ./node_modules/.bin/tsc -p tsconfig.cli.json --noEmit --incremental false   passed
@@ -148,7 +157,17 @@ Automated Chromium coverage now verifies:
 - rendered page pairs stay inside their pixel budget, produce an overlay,
   release their object URLs, and abort on demand;
 - the Visual tab renders the current pair, outlines changed areas, switches
-  layouts, and re-runs when the page changes.
+  engine and layout, and re-runs when the page changes;
+- reflow-aware comparison on the reflow fixture reports one added line, one
+  edited line and the rest as moved, with under a fifth of the exact
+  comparison's changed pixels;
+- choosing both documents in quick succession produces a comparison instead of
+  stranding the first selection.
+
+Measured in Chromium on the reflow fixture at ~151 DPI (1247×1763): the exact
+comparison reports 49,253 changed pixels, the aligned comparison 6,110. One
+aligned comparison of a page pair took roughly 480 ms against 305 ms for the
+exact one; both run on the UI thread.
 
 Browser tests launch Chromium through `tests/helpers/browser.ts`, which honours
 `PDF_DIFF_CHROMIUM_EXECUTABLE` for environments that ship a preinstalled

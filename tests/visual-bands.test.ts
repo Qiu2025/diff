@@ -76,7 +76,7 @@ test('an inserted line does not make the rest of the page look changed', () => {
   assert.equal(aligned.bandCounts.equal, 1);
   assert.equal(aligned.bandCounts.moved, body.length - 1);
   assert.equal(aligned.changedPixels, 140 * 8, 'only the inserted line counts as changed');
-  assert.equal(describeAlignedStatus(aligned), '1 added line, 10 unchanged but moved');
+  assert.equal(describeAlignedStatus(aligned), '1 line added; 10 more only moved');
 });
 
 test('a removed line is reported on the original page', () => {
@@ -101,7 +101,7 @@ test('an edited line is reported as edited, not as an add plus a remove', () => 
   assert.equal(aligned.bandCounts.removed, 0);
   assert.equal(aligned.bandCounts.equal, 2);
   assert.equal(aligned.changedPixels, 8 * 8);
-  assert.match(describeAlignedStatus(aligned), /1 edited line/);
+  assert.equal(describeAlignedStatus(aligned), '1 line edited');
 });
 
 test('identical pages report no change and no moved content', () => {

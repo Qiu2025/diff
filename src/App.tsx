@@ -15,6 +15,9 @@ import type { ViewMode, Theme } from './components';
 import { openPdfSession } from './utils/pdfUtils';
 import { usePdfSlot } from './hooks/usePdfSlot';
 import type { LoadedPdf } from './hooks/usePdfSlot';
+
+type PdfSide = 'original' | 'modified';
+type PdfRequest = { controller: AbortController };
 import { compareDocuments } from './utils/diffUtils';
 import { exportDiffToPDF } from './utils/exportUtils';
 import './App.css';
@@ -24,12 +27,17 @@ function App() {
   const [modifiedFile, setModifiedFile] = useState<File | null>(null);
   const [original, adoptOriginal] = usePdfSlot();
   const [modified, adoptModified] = usePdfSlot();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [busy, setBusy] = useState<Record<PdfSide, boolean>>({ original: false, modified: false });
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
   const [currentPage, setCurrentPage] = useState(1);
   const [showAllPages, setShowAllPages] = useState(false);
-  const activeRequest = useRef<{ controller: AbortController } | null>(null);
+  // One request identity per side: replacing the original must not cancel work
+  // already under way on the modified document.
+  const activeRequests = useRef<Record<PdfSide, PdfRequest | null>>({
+    original: null,
+    modified: null,
+  });
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = localStorage.getItem('pdf-diff-theme') as Theme;
     return savedTheme || 'system';
@@ -40,20 +48,32 @@ function App() {
     localStorage.setItem('pdf-diff-theme', theme);
   }, [theme]);
 
-  useEffect(() => () => activeRequest.current?.controller.abort(), []);
+  useEffect(() => () => {
+    Object.values(activeRequests.current).forEach(request => request?.controller.abort());
+  }, []);
 
-  const beginRequest = useCallback(() => {
-    activeRequest.current?.controller.abort();
+  const isCurrent = useCallback(
+    (side: PdfSide, request: PdfRequest) => activeRequests.current[side] === request,
+    []
+  );
+
+  const beginRequest = useCallback((side: PdfSide): PdfRequest => {
+    activeRequests.current[side]?.controller.abort();
     const request = { controller: new AbortController() };
-    activeRequest.current = request;
-    setIsProcessing(true);
+    activeRequests.current[side] = request;
+    setBusy(current => ({ ...current, [side]: true }));
     return request;
   }, []);
 
-  const finishRequest = useCallback((request: { controller: AbortController }) => {
-    if (activeRequest.current !== request) return;
-    activeRequest.current = null;
-    setIsProcessing(false);
+  const finishRequest = useCallback((side: PdfSide, request: PdfRequest) => {
+    if (activeRequests.current[side] !== request) return;
+    activeRequests.current[side] = null;
+    setBusy(current => ({ ...current, [side]: false }));
+  }, []);
+
+  const abortSide = useCallback((side: PdfSide) => {
+    activeRequests.current[side]?.controller.abort();
+    activeRequests.current[side] = null;
   }, []);
 
   /**
@@ -62,13 +82,14 @@ function App() {
    */
   const loadPdf = useCallback(async (
     file: File,
-    request: { controller: AbortController }
+    side: PdfSide,
+    request: PdfRequest
   ): Promise<LoadedPdf | null> => {
     const session = await openPdfSession(file, request.controller.signal);
 
     try {
       const doc = await session.extractDocument(request.controller.signal);
-      if (activeRequest.current !== request) {
+      if (!isCurrent(side, request)) {
         await session.destroy();
         return null;
       }
@@ -77,14 +98,15 @@ function App() {
       await session.destroy();
       throw error;
     }
-  }, []);
+  }, [isCurrent]);
 
   /** Loads both sides together, destroying a survivor if its partner fails. */
   const loadPdfPair = useCallback(async (
-    files: readonly [File, File],
-    request: { controller: AbortController }
+    entries: readonly { file: File; side: PdfSide; request: PdfRequest }[]
   ): Promise<(LoadedPdf | null)[]> => {
-    const results = await Promise.allSettled(files.map(file => loadPdf(file, request)));
+    const results = await Promise.allSettled(
+      entries.map(entry => loadPdf(entry.file, entry.side, entry.request))
+    );
     const loaded = results.map(result => result.status === 'fulfilled' ? result.value : null);
     const rejected = results.find(result => result.status === 'rejected');
 
@@ -95,92 +117,91 @@ function App() {
     return loaded;
   }, [loadPdf]);
 
-  const handleOriginalFile = useCallback(async (file: File) => {
-    const request = beginRequest();
-    setOriginalFile(file);
-    adoptOriginal(null);
+  const handleFile = useCallback(async (
+    side: PdfSide,
+    file: File,
+    adopt: (next: LoadedPdf | null) => void
+  ) => {
+    const request = beginRequest(side);
+    (side === 'original' ? setOriginalFile : setModifiedFile)(file);
+    adopt(null);
     setError(null);
     try {
-      const loaded = await loadPdf(file, request);
-      if (loaded) adoptOriginal(loaded);
+      const loaded = await loadPdf(file, side, request);
+      if (loaded) adopt(loaded);
     } catch {
-      if (activeRequest.current === request) {
-        setError('Failed to process the original PDF. Please try another file.');
+      if (isCurrent(side, request)) {
+        setError(`Failed to process the ${side} PDF. Please try another file.`);
       }
     } finally {
-      finishRequest(request);
+      finishRequest(side, request);
     }
-  }, [adoptOriginal, beginRequest, finishRequest, loadPdf]);
+  }, [beginRequest, finishRequest, isCurrent, loadPdf]);
 
-  const handleModifiedFile = useCallback(async (file: File) => {
-    const request = beginRequest();
-    setModifiedFile(file);
-    adoptModified(null);
-    setError(null);
-    try {
-      const loaded = await loadPdf(file, request);
-      if (loaded) adoptModified(loaded);
-    } catch {
-      if (activeRequest.current === request) {
-        setError('Failed to process the modified PDF. Please try another file.');
-      }
-    } finally {
-      finishRequest(request);
-    }
-  }, [adoptModified, beginRequest, finishRequest, loadPdf]);
+  const handleOriginalFile = useCallback(
+    (file: File) => handleFile('original', file, adoptOriginal),
+    [adoptOriginal, handleFile]
+  );
+
+  const handleModifiedFile = useCallback(
+    (file: File) => handleFile('modified', file, adoptModified),
+    [adoptModified, handleFile]
+  );
 
   const handleReset = useCallback(() => {
-    activeRequest.current?.controller.abort();
-    activeRequest.current = null;
-    setIsProcessing(false);
+    abortSide('original');
+    abortSide('modified');
+    setBusy({ original: false, modified: false });
     setOriginalFile(null);
     setModifiedFile(null);
     adoptOriginal(null);
     adoptModified(null);
     setError(null);
     setCurrentPage(1);
-  }, [adoptOriginal, adoptModified]);
+  }, [abortSide, adoptOriginal, adoptModified]);
 
   const handleTryDemo = useCallback(async () => {
-    const request = beginRequest();
+    const requests: Record<PdfSide, PdfRequest> = {
+      original: beginRequest('original'),
+      modified: beginRequest('modified'),
+    };
+    const stale = () => !isCurrent('original', requests.original)
+      || !isCurrent('modified', requests.modified);
+
     try {
       setError(null);
       adoptOriginal(null);
       adoptModified(null);
-      
-      // Fetch demo PDFs
+
       const [originalResponse, modifiedResponse] = await Promise.all([
-        fetch('/demo-original.pdf', { signal: request.controller.signal }),
-        fetch('/demo-modified.pdf', { signal: request.controller.signal })
+        fetch('/demo-original.pdf', { signal: requests.original.controller.signal }),
+        fetch('/demo-modified.pdf', { signal: requests.modified.controller.signal })
       ]);
-      
       const [originalBlob, modifiedBlob] = await Promise.all([
         originalResponse.blob(),
         modifiedResponse.blob()
       ]);
-      
-      // Create File objects
       const originalFile = new File([originalBlob], 'demo-original.pdf', { type: 'application/pdf' });
       const modifiedFile = new File([modifiedBlob], 'demo-modified.pdf', { type: 'application/pdf' });
-      
-      // Set files
-      if (activeRequest.current !== request) return;
+
+      if (stale()) return;
       setOriginalFile(originalFile);
       setModifiedFile(modifiedFile);
-      
-      // Process PDFs
-      const [loadedOriginal, loadedModified] = await loadPdfPair([originalFile, modifiedFile], request);
-      
+
+      const [loadedOriginal, loadedModified] = await loadPdfPair([
+        { file: originalFile, side: 'original', request: requests.original },
+        { file: modifiedFile, side: 'modified', request: requests.modified },
+      ]);
+
       if (loadedOriginal) adoptOriginal(loadedOriginal);
       if (loadedModified) adoptModified(loadedModified);
     } catch {
-      if (activeRequest.current === request) {
-        setError('Failed to load demo PDFs. Please try again.');
-      }
+      if (!stale()) setError('Failed to load demo PDFs. Please try again.');
     } finally {
-      finishRequest(request);
+      finishRequest('original', requests.original);
+      finishRequest('modified', requests.modified);
     }
-  }, [adoptOriginal, adoptModified, beginRequest, finishRequest, loadPdfPair]);
+  }, [adoptOriginal, adoptModified, beginRequest, finishRequest, isCurrent, loadPdfPair]);
 
   const comparisonResult = useMemo(
     () => original && modified ? compareDocuments(original.doc, modified.doc) : null,
@@ -203,6 +224,7 @@ function App() {
     if (comparisonResult) exportDiffToPDF(comparisonResult);
   }, [comparisonResult]);
 
+  const isProcessing = busy.original || busy.modified;
   const showComparison = comparisonResult !== null;
 
   return (

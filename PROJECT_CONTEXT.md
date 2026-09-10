@@ -1,6 +1,6 @@
 # PDF Diff Project Context
 
-> Last audited: 2026-09-10 through commit `c7e1896` (`feat(web): add a Visual comparison view for the selected page pair`).
+> Last audited: 2026-09-10 through commit `a0c77cf` (`feat(visual): compare pages after removing vertical reflow`).
 >
 > This is a context document, not a backlog. New contributors and Codex chats
 > should verify the current checkout before applying any path-specific detail.
@@ -56,8 +56,12 @@ surfaces.
 - Main orchestration and state live in `src/App.tsx`.
 - Presentational controls live in `src/components/`.
 - Browser PDF, diff, and export helpers live in `src/utils/`.
-- The runtime-neutral pixel comparison lives in `src/utils/visualDiff.ts`; its
-  browser rasterization adapter lives in `src/utils/visualPageRenderer.ts`.
+- Raster primitives live in `src/utils/raster.ts`, exact pixel comparison in
+  `src/utils/visualDiff.ts`, reflow-aware comparison in
+  `src/utils/visualBands.ts`, and the browser rasterization adapter in
+  `src/utils/visualPageRenderer.ts`.
+- Ordered sequence alignment is shared by the text and visual layers in
+  `src/utils/sequenceAlignment.ts`.
 
 The browser build is served as static files. The current source contains no
 document upload API. Its automatic fetches are the two same-origin demo PDFs,
@@ -78,7 +82,11 @@ and the PDF.js worker is bundled locally.
 - The web application is built in Docker and served by Nginx.
 - `.github/workflows/docker-build.yml` builds and pushes the Docker image after
   pushes to `main`.
-- `npm test` runs the core regression cases in `tests/pdf-diff.test.ts`.
+- `npm test` runs the core and Chromium regression cases in `tests/`. Browser
+  tests launch Chromium through `tests/helpers/browser.ts`, which honours
+  `PDF_DIFF_CHROMIUM_EXECUTABLE`.
+- `npm run generate-fixtures` regenerates the committed corpus in
+  `tests/fixtures/`.
 - The static CLI documentation is maintained separately in `public/cli.html`.
 
 ## Current processing flow
@@ -109,10 +117,11 @@ Visual comparison runs as a separate, on-demand path:
 PdfSession (both sides)
   -> getPageSize() to plan one shared render scale within a pixel budget
   -> render both pages into one raster size
-  -> compareRasters()
-  -> VisualPageDiff: status, changed pixels, regions, per-pixel mask
-  -> overlay canvas -> object URLs -> React
-  -> canvases, image data, and mask released before the result is returned
+  -> compareAlignedRasters()   band segmentation, matching, per-band comparison
+     or compareRasters()       exact, position by position
+  -> status, changed pixels, bands, regions, per-pixel masks
+  -> overlay canvas per side -> object URLs -> React
+  -> canvases, image data, and masks released before the result is returned
 ```
 
 The visual result is deliberately not merged into `ComparisonResult`. Text and
@@ -163,13 +172,21 @@ Pixel comparison now exists, but it runs *after* alignment on a pair the text
 layer chose. Visual fingerprints are still needed before image-only page
 matching can be treated as reliable.
 
-### 3. Pixel comparison has no reflow tolerance
+### 3. Pixel comparison models vertical reflow only
 
-Rendered comparison is exact: inserting one line shifts every line below it, so
-those lines are reported as changed. The change regions are still correct about
-where the two renders differ, but the changed-pixel percentage is not an
-edit-size metric and must not be presented as one. Aligning content bands
-before comparing pixels is the next step for this layer.
+The aligned engine segments each render into horizontal bands of content,
+matches them between versions, and compares each matched band where it sits, so
+an inserted line no longer marks the rest of the page as changed. Two limits
+remain:
+
+- horizontal displacement is not modelled, so a line whose content shifts
+  sideways is reported as edited rather than moved;
+- bands span the full page width, so a multi-column layout attributes a change
+  in one column to the whole row. Column detection is not implemented.
+
+The exact engine stays available and makes no alignment assumptions; its
+changed-pixel percentage is not an edit-size metric and must not be presented
+as one.
 
 ### 4. Work is synchronous and has no resource budget
 
@@ -188,8 +205,10 @@ parts, and statistics, then mounts all page details in the DOM.
 
 `PdfSession` opens a browser PDF once, validates page access, supports
 `AbortSignal`, cleans up pages, and destroys the document. `App.tsx` keeps one
-active request identity and aborts older extraction when a file is replaced,
-the demo is restarted, or the comparison resets. CLI extraction also cleans up
+active request identity *per side* and aborts older extraction when that side's
+file is replaced, the demo is restarted, or the comparison resets. Per-side
+identity matters: a single shared identity meant choosing the second document
+cancelled the first, leaving no comparison and no error. CLI extraction also cleans up
 pages and documents. Sessions are now kept open for the life of a comparison
 and destroyed on replacement, reset, cancellation, and unmount; an open-session
 counter makes that lifecycle testable. Cancellation does not interrupt the
@@ -215,12 +234,16 @@ and its own diagnostics, and it is not folded into the text result.
 The regression suite covers the deterministic demo, core text behavior, line
 and page alignment, the page model, explicit comparison states, HTML escaping,
 JSON/JUnit result contracts, `PdfSession`, the sample browser flow, stale
-replacement/reset races, PDF session lifetime, pixel comparison, page
-rasterization, and the Visual view in Chromium.
+replacement/reset races, PDF session lifetime, exact and reflow-aware pixel
+comparison, page rasterization, and the Visual view in Chromium.
 
-The corpus still needs scanned/image-only pages, multi-column text, rotation,
-RTL and CJK text, ligatures, line wrapping/hyphenation, damaged/encrypted PDFs,
-and very different long pages.
+`tests/fixtures/` adds a deterministic corpus generated by
+`npm run generate-fixtures`: a pure reflow pair, an image-only "scanned" pair,
+Letter and A4 versions of one page, a landscape page, and a truncated file.
+
+The corpus still needs true `/Rotate` pages, multi-column text, RTL and CJK
+text, ligatures, line wrapping/hyphenation, encrypted PDFs, and very long
+documents.
 
 ### 8. CLI and public contract details have drifted
 
@@ -329,9 +352,9 @@ concurrency and immediate release of large image buffers.
 
 The technical dependencies suggest the following direction:
 
-Pixel comparison of one page pair is implemented; reflow tolerance,
-whole-document visual review, visual page fingerprints, and visual evidence in
-exports are not.
+Pixel comparison of one page pair, with and without reflow tolerance, is
+implemented. Whole-document visual review, visual page fingerprints for
+alignment, column-aware banding, and visual evidence in exports are not.
 
 ```text
 reliable text extraction and page alignment
