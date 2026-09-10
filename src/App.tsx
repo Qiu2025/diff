@@ -11,8 +11,9 @@ import {
   ExportButton,
 } from './components';
 import type { ViewMode, Theme } from './components';
-import { extractTextFromPDF } from './utils/pdfUtils';
-import type { PDFDocument } from './utils/pdfUtils';
+import { openPdfSession } from './utils/pdfUtils';
+import { usePdfSlot } from './hooks/usePdfSlot';
+import type { LoadedPdf } from './hooks/usePdfSlot';
 import { compareDocuments } from './utils/diffUtils';
 import { exportDiffToPDF } from './utils/exportUtils';
 import './App.css';
@@ -20,8 +21,8 @@ import './App.css';
 function App() {
   const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [modifiedFile, setModifiedFile] = useState<File | null>(null);
-  const [originalDoc, setOriginalDoc] = useState<PDFDocument | null>(null);
-  const [modifiedDoc, setModifiedDoc] = useState<PDFDocument | null>(null);
+  const [original, adoptOriginal] = usePdfSlot();
+  const [modified, adoptModified] = usePdfSlot();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('side-by-side');
@@ -54,15 +55,53 @@ function App() {
     setIsProcessing(false);
   }, []);
 
+  /**
+   * Opens a PDF, extracts its text, and hands the still-open session to the
+   * caller. A session that loses its race is destroyed instead of leaking.
+   */
+  const loadPdf = useCallback(async (
+    file: File,
+    request: { controller: AbortController }
+  ): Promise<LoadedPdf | null> => {
+    const session = await openPdfSession(file, request.controller.signal);
+
+    try {
+      const doc = await session.extractDocument(request.controller.signal);
+      if (activeRequest.current !== request) {
+        await session.destroy();
+        return null;
+      }
+      return { doc, session };
+    } catch (error) {
+      await session.destroy();
+      throw error;
+    }
+  }, []);
+
+  /** Loads both sides together, destroying a survivor if its partner fails. */
+  const loadPdfPair = useCallback(async (
+    files: readonly [File, File],
+    request: { controller: AbortController }
+  ): Promise<(LoadedPdf | null)[]> => {
+    const results = await Promise.allSettled(files.map(file => loadPdf(file, request)));
+    const loaded = results.map(result => result.status === 'fulfilled' ? result.value : null);
+    const rejected = results.find(result => result.status === 'rejected');
+
+    if (rejected) {
+      await Promise.all(loaded.map(entry => entry?.session.destroy()));
+      throw rejected.reason;
+    }
+    return loaded;
+  }, [loadPdf]);
+
   const handleOriginalFile = useCallback(async (file: File) => {
     const request = beginRequest();
     setOriginalFile(file);
-    setOriginalDoc(null);
+    adoptOriginal(null);
     setError(null);
     try {
-      const doc = await extractTextFromPDF(file, request.controller.signal);
-      if (activeRequest.current !== request) return;
-      setOriginalDoc(doc);
+      const loaded = await loadPdf(file, request);
+      if (loaded) adoptOriginal(loaded);
     } catch {
       if (activeRequest.current === request) {
         setError('Failed to process the original PDF. Please try another file.');
@@ -70,17 +109,16 @@ function App() {
     } finally {
       finishRequest(request);
     }
-  }, [beginRequest, finishRequest]);
+  }, [adoptOriginal, beginRequest, finishRequest, loadPdf]);
 
   const handleModifiedFile = useCallback(async (file: File) => {
     const request = beginRequest();
     setModifiedFile(file);
-    setModifiedDoc(null);
+    adoptModified(null);
     setError(null);
     try {
-      const doc = await extractTextFromPDF(file, request.controller.signal);
-      if (activeRequest.current !== request) return;
-      setModifiedDoc(doc);
+      const loaded = await loadPdf(file, request);
+      if (loaded) adoptModified(loaded);
     } catch {
       if (activeRequest.current === request) {
         setError('Failed to process the modified PDF. Please try another file.');
@@ -88,7 +126,7 @@ function App() {
     } finally {
       finishRequest(request);
     }
-  }, [beginRequest, finishRequest]);
+  }, [adoptModified, beginRequest, finishRequest, loadPdf]);
 
   const handleReset = useCallback(() => {
     activeRequest.current?.controller.abort();
@@ -96,18 +134,18 @@ function App() {
     setIsProcessing(false);
     setOriginalFile(null);
     setModifiedFile(null);
-    setOriginalDoc(null);
-    setModifiedDoc(null);
+    adoptOriginal(null);
+    adoptModified(null);
     setError(null);
     setCurrentPage(1);
-  }, []);
+  }, [adoptOriginal, adoptModified]);
 
   const handleTryDemo = useCallback(async () => {
     const request = beginRequest();
     try {
       setError(null);
-      setOriginalDoc(null);
-      setModifiedDoc(null);
+      adoptOriginal(null);
+      adoptModified(null);
       
       // Fetch demo PDFs
       const [originalResponse, modifiedResponse] = await Promise.all([
@@ -130,14 +168,10 @@ function App() {
       setModifiedFile(modifiedFile);
       
       // Process PDFs
-      const [originalDoc, modifiedDoc] = await Promise.all([
-        extractTextFromPDF(originalFile, request.controller.signal),
-        extractTextFromPDF(modifiedFile, request.controller.signal)
-      ]);
+      const [loadedOriginal, loadedModified] = await loadPdfPair([originalFile, modifiedFile], request);
       
-      if (activeRequest.current !== request) return;
-      setOriginalDoc(originalDoc);
-      setModifiedDoc(modifiedDoc);
+      if (loadedOriginal) adoptOriginal(loadedOriginal);
+      if (loadedModified) adoptModified(loadedModified);
     } catch {
       if (activeRequest.current === request) {
         setError('Failed to load demo PDFs. Please try again.');
@@ -145,11 +179,11 @@ function App() {
     } finally {
       finishRequest(request);
     }
-  }, [beginRequest, finishRequest]);
+  }, [adoptOriginal, adoptModified, beginRequest, finishRequest, loadPdfPair]);
 
   const comparisonResult = useMemo(
-    () => originalDoc && modifiedDoc ? compareDocuments(originalDoc, modifiedDoc) : null,
-    [originalDoc, modifiedDoc]
+    () => original && modified ? compareDocuments(original.doc, modified.doc) : null,
+    [original, modified]
   );
   const totalPages = comparisonResult?.pageDiffs.length ?? 0;
   const currentPageDiff = comparisonResult?.pageDiffs[currentPage - 1] ?? comparisonResult?.pageDiffs[0] ?? null;

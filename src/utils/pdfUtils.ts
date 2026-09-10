@@ -17,6 +17,19 @@ export interface PageSize {
   rotation: number;
 }
 
+let openSessions = 0;
+
+/**
+ * Number of PDF documents currently held open.
+ *
+ * Sessions stay open so pages can be rendered on demand, which makes leaked
+ * sessions a real memory risk. This counter lets tests and diagnostics assert
+ * that every session is eventually destroyed.
+ */
+export function getOpenSessionCount(): number {
+  return openSessions;
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw signal.reason instanceof Error
@@ -45,6 +58,7 @@ export async function openPdfSession(file: File, signal?: AbortSignal) {
     signal?.removeEventListener('abort', abortLoading);
   }
   let destroyed = false;
+  openSessions += 1;
 
   const getPage = async (pageNumber: number) => {
     if (destroyed) throw new Error('PDF session has been destroyed.');
@@ -136,6 +150,7 @@ export async function openPdfSession(file: File, signal?: AbortSignal) {
     async destroy(): Promise<void> {
       if (destroyed) return;
       destroyed = true;
+      openSessions -= 1;
       await pdf.destroy();
     },
   };
