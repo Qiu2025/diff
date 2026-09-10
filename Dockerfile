@@ -6,10 +6,17 @@ RUN npm ci
 COPY . .
 
 # Self-host the OCR engine and language data so the deployed app never asks a
-# CDN for them. Build with --build-arg ENABLE_OCR=false to skip the download;
-# the app then reports OCR as unavailable instead of reaching out at runtime.
+# CDN for them. Build with --build-arg ENABLE_OCR=false to skip the download.
+#
+# A failed download must not break the image: this build also publishes the
+# site, and the app already handles missing assets by reporting OCR as
+# unavailable rather than reaching out at runtime. The warning is loud enough
+# to find in the build log.
 ARG ENABLE_OCR=true
-RUN if [ "$ENABLE_OCR" = "true" ]; then npm run prepare-ocr; fi
+RUN if [ "$ENABLE_OCR" = "true" ]; then \
+      npm run prepare-ocr \
+      || echo "WARNING: OCR assets could not be prepared; building without OCR"; \
+    fi
 
 RUN npm run build
 

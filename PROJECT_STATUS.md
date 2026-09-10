@@ -123,7 +123,12 @@ bugs, especially for arbitrary PDF producers and layouts.
   limitation of the reading-order heuristic above.
 - OCR assets are not committed and not fetched at build time by default outside
   Docker: `npm run prepare-ocr` must be run, or the feature reports itself
-  unavailable.
+  unavailable. The Docker build tolerates a failed download and publishes
+  without OCR rather than failing the image, since that build also publishes
+  the site.
+- Nothing runs the regression suite automatically. The only workflow builds and
+  pushes the Docker image on `main`; it does not run `npm test`, so the suite
+  protects only contributors who run it locally.
 - Structural analysis does not exist yet.
 - The production bundle still reports a chunk larger than 500 kB, though the
   entry chunk fell from 975 kB to 590 kB once the export path became a dynamic
